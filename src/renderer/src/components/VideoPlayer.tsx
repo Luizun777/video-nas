@@ -59,6 +59,8 @@ export function VideoPlayer({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedRef = useRef(0)
   const resumeAtRef = useRef<number | null>(null)
+  const blackScreenFiredRef = useRef(false)
+  const handleErrorRef = useRef<() => void>(() => {})
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -136,6 +138,7 @@ export function VideoPlayer({
     setNextUpState('hidden')
     setCountdown(NEXT_UP_COUNTDOWN_SECONDS)
     setChapterMarks({})
+    blackScreenFiredRef.current = false
     revealControls()
 
     let cancelled = false
@@ -162,6 +165,25 @@ export function VideoPlayer({
       cancelled = true
     }
   }, [itemId, effectiveRelPath, startAt])
+
+  // Watchdog de pista de video indecodificable (HEVC 4K 10-bit en tablets): NO dispara
+  // onError — el audio corre (o el elemento queda pausado) con pantalla negra. Con la
+  // metadata cargada, un stream decodificable ya reporta dimensiones; si tras unos
+  // segundos sigue en 0, jamás habrá frames → mismo fallback que un error de formato.
+  // Corre por intervalo (no timeupdate) para cubrir también el caso atascado en pausa.
+  useEffect(() => {
+    blackScreenFiredRef.current = false
+    const timer = setInterval(() => {
+      const video = videoRef.current
+      if (!video || blackScreenFiredRef.current) return
+      if (video.readyState >= 1 && video.videoWidth === 0 && !video.error) {
+        blackScreenFiredRef.current = true
+        clearInterval(timer)
+        handleErrorRef.current()
+      }
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [itemId, effectiveRelPath])
 
   // Reparto/relacionadas de películas: para la recomendación de secuela al terminar.
   useEffect(() => {
@@ -365,6 +387,7 @@ export function VideoPlayer({
       'Este formato no es compatible con el reproductor integrado. Se abrió en tu reproductor externo.'
     )
   }
+  handleErrorRef.current = handleError
 
   const handleSeekClick = (event: React.MouseEvent<HTMLDivElement>): void => {
     const video = videoRef.current

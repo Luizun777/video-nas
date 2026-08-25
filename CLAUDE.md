@@ -141,3 +141,7 @@ tests/         módulos puros de core (corren sin Electron ni Android)
   Electron el IPC serializa y siempre llega objeto nuevo). La API móvil debe devolver
   snapshots (`{...getLibrary()}`, `[...getQueue()]`) en todo lo que el renderer compara
   por referencia. Síntoma: progreso/estados se actualizan pero la biblioteca queda en 0.
+- Un códec de video no soportado puede NO disparar `onError` del `<video>`: si solo la
+  pista de video es indecodificable (HEVC 4K 10-bit en la Redmi Pad SE), el audio avanza
+  con pantalla negra y 0 frames decodificados. El watchdog de VideoPlayer (currentTime>5
+  con videoWidth===0) lo trata como formato incompatible y cae al reproductor externo.
