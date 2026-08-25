@@ -13,7 +13,8 @@ import { nodeStoreIO } from './adapters/node-store-io'
 import { loadSeedToken } from './adapters/node-seed'
 import { initDownloadManager } from './downloads/download-manager'
 import { registerVideoFileProtocol } from './playback/stream-protocol'
-import { refreshStatuses, startScan } from './scanner/scan-orchestrator'
+import { initScanner, refreshStatuses, startScan } from '@core/scanner/scan-orchestrator'
+import { desktopScanEnv } from './adapters/desktop-scan-env'
 import { cacheRoot, ensureCacheDirs } from './tmdb/image-cache'
 
 // Las portadas se sirven por un protocolo propio en lugar de file://, para no tener
@@ -76,6 +77,7 @@ void app.whenReady().then(async () => {
   ])
   await Promise.all([ensureCacheDirs(), initDownloadManager()])
 
+  initScanner(desktopScanEnv)
   registerIpc()
   createMainWindow()
 

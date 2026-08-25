@@ -59,9 +59,10 @@ import {
   onStatuses,
   refreshStatuses,
   startScan
-} from './scanner/scan-orchestrator'
-import { getExtraDetails as fetchExtraDetails, getTvSeasons, searchAsResults, testToken } from './tmdb/client'
-import { identifyByTmdbId } from './tmdb/identifier'
+} from '@core/scanner/scan-orchestrator'
+import { getExtraDetails as fetchExtraDetails, getTvSeasons, searchAsResults, testToken } from '@core/tmdb/client'
+import { identifyByTmdbId } from '@core/tmdb/identifier'
+import { desktopImageCache } from './tmdb/image-cache'
 
 const exec = promisify(execFile)
 
@@ -140,7 +141,8 @@ export function registerIpc(): void {
         const config = getConfig()
         const outcome = await identifyByTmdbId(override.mediaType ?? item.kind, override.tmdbId!, {
           token: config.tmdbBearerToken,
-          language: config.language
+          language: config.language,
+          images: desktopImageCache
         })
         updated = { ...item, ...outcome, tvDetails: null, extraDetails: null }
       }

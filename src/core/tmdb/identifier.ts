@@ -1,7 +1,7 @@
 import type { IdentifyState, LibraryItem, MediaKind, TmdbMatch } from '@shared/types'
 import { normalizeForCompare } from '@core/scanner/name-parser'
 import { getById, search, toMatch } from './client'
-import { cacheBackdrop, cachePoster } from './image-cache'
+import type { ImageCacheAdapter } from '../io'
 
 export interface IdentifyOutcome {
   identify: IdentifyState
@@ -160,10 +160,11 @@ function shortenTitle(title: string): string | null {
   return words.slice(0, Math.max(2, Math.ceil(words.length / 2))).join(' ')
 }
 
-async function withImages(match: TmdbMatch): Promise<IdentifyOutcome> {
+async function withImages(match: TmdbMatch, images?: ImageCacheAdapter): Promise<IdentifyOutcome> {
+  if (!images) return { identify: 'auto', tmdb: match }
   const [posterCache, backdropCache] = await Promise.all([
-    cachePoster(match.mediaType, match.id, match.posterPath),
-    cacheBackdrop(match.mediaType, match.id, match.backdropPath)
+    images.cachePoster(match.mediaType, match.id, match.posterPath),
+    images.cacheBackdrop(match.mediaType, match.id, match.backdropPath)
   ])
   return { identify: 'auto', tmdb: match, posterCache, backdropCache }
 }
@@ -171,6 +172,8 @@ async function withImages(match: TmdbMatch): Promise<IdentifyOutcome> {
 export interface IdentifyContext {
   token: string | null
   language: string
+  /** Sin images el match se devuelve sin cachear portadas (tests, modo degradado). */
+  images?: ImageCacheAdapter
 }
 
 /** Búsqueda automática: título+año, luego sin año, luego título recortado. */
@@ -203,7 +206,7 @@ export async function identifyItem(
     const best = pickBestMatch(results, title, year)
     if (!best) continue
     if (best.titleScore >= TITLE_SCORE.exact) {
-      return withImages(toMatch(best.raw, kind))
+      return withImages(toMatch(best.raw, kind), ctx.images)
     }
     if (!bestSoFar || best.score > bestSoFar.score) bestSoFar = best
     // Los intentos siguientes (sin año, con el título recortado) existen para cuando no
@@ -212,7 +215,7 @@ export async function identifyItem(
     if (best.titleScore >= MIN_TITLE_SCORE) break
   }
 
-  if (bestSoFar) return withImages(toMatch(bestSoFar.raw, kind))
+  if (bestSoFar) return withImages(toMatch(bestSoFar.raw, kind), ctx.images)
   return { identify: 'unidentified', tmdb: null }
 }
 
@@ -225,7 +228,7 @@ export async function identifyByTmdbId(
   if (!ctx.token) return { identify: 'unidentified', tmdb: null }
   try {
     const match = await getById(ctx.token, ctx.language, kind, tmdbId)
-    const outcome = await withImages(match)
+    const outcome = await withImages(match, ctx.images)
     return { ...outcome, identify: 'manual' }
   } catch {
     return { identify: 'unidentified', tmdb: null }

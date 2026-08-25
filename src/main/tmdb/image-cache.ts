@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { MediaKind } from '@shared/types'
-import { BACKDROP_SIZE, POSTER_SIZE, downloadImage } from './client'
+import type { ImageCacheAdapter } from '@core/io'
+import { BACKDROP_SIZE, POSTER_SIZE, downloadImage } from '@core/tmdb/client'
 
 export function cacheRoot(): string {
   return join(app.getPath('userData'), 'cache')
@@ -66,4 +67,11 @@ export function cacheBackdrop(
   backdropPath: string | null
 ): Promise<string | undefined> {
   return cacheImage(kind, tmdbId, backdropPath, 'backdrops', BACKDROP_SIZE)
+}
+
+/** Adapter que consumen el escáner y el identificador de core. */
+export const desktopImageCache: ImageCacheAdapter = {
+  ensureReady: ensureCacheDirs,
+  cachePoster,
+  cacheBackdrop
 }

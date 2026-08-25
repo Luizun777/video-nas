@@ -8,6 +8,7 @@ import type {
   TvDetails
 } from '@shared/types'
 import { BACKDROP_SIZE, IMAGE_BASE, POSTER_SIZE, THUMB_SIZE } from '@shared/tmdb-images'
+import { timeoutSignal } from '../util'
 
 const API_BASE = 'https://api.themoviedb.org/3'
 export { IMAGE_BASE, POSTER_SIZE, BACKDROP_SIZE, THUMB_SIZE }
@@ -78,7 +79,7 @@ async function request<T>(token: string, path: string, params: Record<string, st
       try {
         response = await fetch(url, {
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-          signal: AbortSignal.timeout(15_000)
+          signal: timeoutSignal(15_000)
         })
       } catch (error) {
         if (attempt === 0) {
@@ -376,13 +377,13 @@ export async function testToken(token: string): Promise<{ ok: boolean; error?: s
   }
 }
 
-export async function downloadImage(path: string, size: string): Promise<Buffer | null> {
+export async function downloadImage(path: string, size: string): Promise<Uint8Array | null> {
   try {
     const response = await fetch(`${IMAGE_BASE}/${size}${path}`, {
-      signal: AbortSignal.timeout(20_000)
+      signal: timeoutSignal(20_000)
     })
     if (!response.ok) return null
-    return Buffer.from(await response.arrayBuffer())
+    return new Uint8Array(await response.arrayBuffer())
   } catch {
     return null
   }

@@ -1,16 +1,14 @@
-import { join } from 'node:path'
 import type {
   LibraryItem,
   ScanProgress,
   ServerConfig,
   ServerStatus
 } from '@shared/types'
+import type { ScanEnv } from '../io'
 import { getConfig } from '@core/stores/config-store'
 import { flushLibrary, getLibrary, putItem, removeItems } from '@core/stores/library-store'
 import { getOverride, setOverride, clearOverride } from '@core/stores/overrides-store'
-import { ensureMounted } from '../nas/mount-manager'
 import { identifyByTmdbId, identifyItem, type IdentifyContext } from '../tmdb/identifier'
-import { ensureCacheDirs } from '../tmdb/image-cache'
 import {
   groupFolder,
   mergeDuplicateMovies,
@@ -41,6 +39,13 @@ const IDENTIFY_CONCURRENCY = 4
 
 const progressListeners = new Set<ProgressListener>()
 const statusListeners = new Set<StatusListener>()
+
+let env: ScanEnv
+
+/** Debe llamarse una vez al arrancar, antes de refreshStatuses/startScan. */
+export function initScanner(scanEnv: ScanEnv): void {
+  env = scanEnv
+}
 
 export function onProgress(listener: ProgressListener): () => void {
   progressListeners.add(listener)
@@ -88,7 +93,7 @@ export function updateStatus(status: ServerStatus): void {
 export async function refreshStatuses(allowMountPrompt = false): Promise<ServerStatus[]> {
   const { servers } = getConfig()
   const statuses = await Promise.all(
-    servers.map((server) => ensureMounted(server, { allowMountPrompt }))
+    servers.map(async (server) => (await env.connect(server, { allowPrompt: allowMountPrompt })).status)
   )
   setStatuses(statuses)
   return statuses
@@ -188,10 +193,10 @@ async function scanServer(
     label: `Conectando con ${server.name}…`
   })
 
-  const status = await ensureMounted(server)
+  const { status, fs: shareFs } = await env.connect(server)
   updateStatus(status)
 
-  if (status.state !== 'online' || !status.mountPoint) {
+  if (status.state !== 'online' || !shareFs) {
     emitProgress({
       phase: 'walking',
       label: `${server.name}: sin conexión, se conserva lo ya catalogado.`
@@ -211,7 +216,7 @@ async function scanServer(
       total: 0,
       label: `Explorando ${server.name}/${folder.path}…`
     })
-    const files = await walkVideos(join(status.mountPoint, folder.path), folder.path, {
+    const files = await walkVideos(shareFs, folder.path, {
       isCancelled: () => cancelled,
       onProgress: (count) =>
         emitProgress({ label: `Explorando ${folder.path}: ${count} archivos encontrados…` })
@@ -338,13 +343,17 @@ export async function startScan(options: ScanOptions = {}): Promise<void> {
   cancelled = false
 
   const config = getConfig()
-  const ctx: IdentifyContext = { token: config.tmdbBearerToken, language: config.language }
+  const ctx: IdentifyContext = {
+    token: config.tmdbBearerToken,
+    language: config.language,
+    images: env.images
+  }
   const now = new Date().toISOString()
 
   emitProgress({ ...IDLE, phase: 'mounting', running: true, label: 'Iniciando escaneo…' })
 
   try {
-    await ensureCacheDirs()
+    await env.images.ensureReady()
 
     if (options.full) {
       // Re-identificar todo: se limpia el match para forzar la búsqueda.

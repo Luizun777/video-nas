@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickBestMatch, titleAffinity, TITLE_SCORE } from '../src/main/tmdb/identifier'
+import { pickBestMatch, titleAffinity, TITLE_SCORE } from '../src/core/tmdb/identifier'
 import { cleanTitle } from '../src/core/scanner/name-parser'
 
 interface Raw {

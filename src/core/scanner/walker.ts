@@ -1,7 +1,6 @@
-import { promises as fs, type Dirent } from 'node:fs'
-import { join } from 'node:path'
-import { hasVideoExtension } from '@core/scanner/name-parser'
-import type { ScannedFile } from '@core/scanner/grouper'
+import type { FsAdapter, FsEntry } from '../io'
+import { hasVideoExtension } from './name-parser'
+import type { ScannedFile } from './grouper'
 
 /** Carpetas de metadatos de NAS y del sistema que no aportan nada al catálogo. */
 const IGNORED_DIRS = new Set([
@@ -27,25 +26,26 @@ export interface WalkOptions {
 }
 
 /**
- * Recorre `absRoot` recursivamente y devuelve los archivos de video encontrados,
- * con la ruta relativa al share (no al root) para que el id del item sea estable.
+ * Recorre `relRoot` recursivamente vía el FsAdapter y devuelve los archivos de video
+ * encontrados, con la ruta relativa al share (no al root) para que el id del item sea
+ * estable entre plataformas.
  */
 export async function walkVideos(
-  absRoot: string,
+  fsa: FsAdapter,
   relRoot: string,
   options: WalkOptions = {}
 ): Promise<ScannedFile[]> {
   const found: ScannedFile[] = []
 
-  async function walk(absDir: string, relDir: string, depth: number): Promise<void> {
+  async function walk(relDir: string, depth: number): Promise<void> {
     if (depth > MAX_DEPTH) return
     if (options.isCancelled?.()) return
 
-    let entries: Dirent[]
+    let entries: FsEntry[]
     try {
-      entries = await fs.readdir(absDir, { withFileTypes: true })
+      entries = await fsa.readDir(relDir)
     } catch {
-      return // permisos, share desmontado a media escaneo, etc.
+      return // permisos, share desconectado a media escaneo, etc.
     }
 
     for (const entry of entries) {
@@ -53,29 +53,20 @@ export async function walkVideos(
       const name = entry.name
       if (name.startsWith('.') || IGNORED_DIRS.has(name)) continue
 
-      const absPath = join(absDir, name)
       const relPath = `${relDir}/${name}`
 
-      if (entry.isDirectory()) {
-        await walk(absPath, relPath, depth + 1)
+      if (entry.dir) {
+        await walk(relPath, depth + 1)
         continue
       }
 
-      if (!entry.isFile() && !entry.isSymbolicLink()) continue
       if (!hasVideoExtension(name)) continue
-
-      let size = 0
-      try {
-        size = (await fs.stat(absPath)).size
-      } catch {
-        continue
-      }
-      found.push({ relPath, size })
+      found.push({ relPath, size: entry.size })
       if (found.length % 25 === 0) options.onProgress?.(found.length)
     }
   }
 
-  await walk(absRoot, relRoot, 0)
+  await walk(relRoot, 0)
   options.onProgress?.(found.length)
   return found
 }
