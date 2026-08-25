@@ -1,0 +1,8 @@
+{
+  "appId": "com.luizun.videonas",
+  "appName": "Video NAS",
+  "webDir": "dist/mobile",
+  "server": {
+    "androidScheme": "http"
+  }
+}

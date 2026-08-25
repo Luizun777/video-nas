@@ -23,7 +23,6 @@
   "include": [
     "electron.vite.config.ts",
     "vite.config.mobile.ts",
-    "capacitor.config.ts",
     "src/main/**/*",
     "src/core/**/*",
     "src/preload/**/*",

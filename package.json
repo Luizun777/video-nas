@@ -12,6 +12,10 @@
     "dist": "npm run build && electron-builder --mac --config electron-builder.yml",
     "dev:mobile": "vite --config vite.config.mobile.ts",
     "build:mobile": "npm run typecheck && vite build --config vite.config.mobile.ts",
+    "cap:sync": "npm run build:mobile && npx cap sync android",
+    "android:apk": "npm run cap:sync && cd android && ./gradlew assembleDebug",
+    "android:install": "adb install -r android/app/build/outputs/apk/debug/app-debug.apk",
+    "android:log": "adb logcat -s Capacitor Capacitor/Console NasPlugin AndroidRuntime chromium",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
