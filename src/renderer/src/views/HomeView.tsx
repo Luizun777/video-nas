@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { LibraryItem } from '@shared/types'
 import { GENRE_NAMES } from '@shared/genres'
+import { backdropSrc } from '@shared/media-src'
 import { Row } from '@/components/Row'
 import {
   displayTitle,
@@ -23,14 +24,12 @@ function Hero({ item }: { item: LibraryItem }): React.JSX.Element {
   const playSmart = useAppStore((s) => s.playSmart)
   const title = displayTitle(item)
   const year = displayYear(item)
+  const backdrop = backdropSrc(item)
 
   return (
     <header className="hero">
-      {item.backdropCache && (
-        <div
-          className="hero-bg"
-          style={{ backgroundImage: `url("mediacache://${item.backdropCache}")` }}
-        />
+      {backdrop && (
+        <div className="hero-bg" style={{ backgroundImage: `url("${backdrop}")` }} />
       )}
       <div className="hero-scrim" />
       <div className="hero-body">

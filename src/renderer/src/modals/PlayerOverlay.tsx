@@ -31,11 +31,16 @@ export function PlayerOverlay(): React.JSX.Element | null {
       standalone={false}
       onClose={closePlayer}
       onChangeTarget={openPlayer}
-      onDetach={(seconds) => {
-        const target = { ...playingTarget, startAt: seconds }
-        closePlayer()
-        void window.api.openPlayerWindow(target)
-      }}
+      onDetach={
+        // Sin ventanas separadas en la plataforma (Android): el botón no se renderiza.
+        window.api.capabilities.separateWindow
+          ? (seconds) => {
+              const target = { ...playingTarget, startAt: seconds }
+              closePlayer()
+              void window.api.openPlayerWindow(target)
+            }
+          : undefined
+      }
     />
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { CastMember, EpisodeEntry, LibraryItem, RelatedTitle } from '@shared/types'
 import { PROFILE_SIZE, THUMB_SIZE, tmdbImageUrl } from '@shared/tmdb-images'
+import { backdropSrc, posterSrc } from '@shared/media-src'
 import { DownloadButton } from '@/components/DownloadButton'
 import { PlaceholderPoster } from '@/components/PlaceholderPoster'
 import { displayTitle, displayYear, inQueue, tmdbIndex, useAppStore } from '@/store/app-store'
@@ -204,21 +205,20 @@ export function DetailView(): React.JSX.Element {
   const title = displayTitle(item)
   const year = displayYear(item)
   const offline = statuses.some((s) => s.serverId === item.serverId && s.state === 'offline')
+  const backdrop = backdropSrc(item)
+  const poster = posterSrc(item)
 
   return (
     <div>
       <header className="detail-hero">
-        {item.backdropCache && (
-          <div
-            className="hero-bg"
-            style={{ backgroundImage: `url("mediacache://${item.backdropCache}")` }}
-          />
+        {backdrop && (
+          <div className="hero-bg" style={{ backgroundImage: `url("${backdrop}")` }} />
         )}
         <div className="hero-scrim" />
         <div className="detail-flex">
           <div className="detail-poster">
-            {item.posterCache ? (
-              <img src={`mediacache://${item.posterCache}`} alt={title} />
+            {poster ? (
+              <img src={poster} alt={title} />
             ) : (
               <PlaceholderPoster title={title} year={year} />
             )}
@@ -304,16 +304,18 @@ export function DetailView(): React.JSX.Element {
           <button className="btn" onClick={() => openEditor(item.id)}>
             Editar información
           </button>
-          <button
-            className="btn btn-ghost"
-            onClick={() =>
-              void window.api.revealInFinder(item.id).then((result) => {
-                if (!result.ok) pushToast(result.error ?? 'No se pudo abrir el Finder.', 'error')
-              })
-            }
-          >
-            Mostrar en Finder
-          </button>
+          {window.api.capabilities.revealInFiles && (
+            <button
+              className="btn btn-ghost"
+              onClick={() =>
+                void window.api.revealInFinder(item.id).then((result) => {
+                  if (!result.ok) pushToast(result.error ?? 'No se pudo abrir el Finder.', 'error')
+                })
+              }
+            >
+              Mostrar en Finder
+            </button>
+          )}
           <span className="spacer" />
           <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>
             ← Volver

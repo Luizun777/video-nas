@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import type { LibraryItem } from '@shared/types'
+import { posterSrc } from '@shared/media-src'
 import { displayTitle, displayYear, hasLocalCopy, useAppStore } from '@/store/app-store'
 import { PlaceholderPoster } from './PlaceholderPoster'
 
@@ -18,6 +19,7 @@ export function PosterCard({ item }: Props): React.JSX.Element {
 
   const title = displayTitle(item)
   const year = displayYear(item)
+  const poster = posterSrc(item)
   const unidentified = item.identify === 'unidentified' || item.identify === 'file-only'
 
   return (
@@ -27,8 +29,8 @@ export function PosterCard({ item }: Props): React.JSX.Element {
       title={title}
     >
       <div className="card-poster">
-        {item.posterCache ? (
-          <img src={`mediacache://${item.posterCache}`} alt={title} loading="lazy" />
+        {poster ? (
+          <img src={poster} alt={title} loading="lazy" />
         ) : (
           <PlaceholderPoster title={title} year={year} />
         )}

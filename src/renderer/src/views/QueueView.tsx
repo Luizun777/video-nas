@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { posterSrc } from '@shared/media-src'
 import { PlaceholderPoster } from '@/components/PlaceholderPoster'
 import {
   displayTitle,
@@ -53,6 +54,7 @@ export function QueueView(): React.JSX.Element {
         {items.map((item, index) => {
           const title = displayTitle(item)
           const year = displayYear(item)
+          const poster = posterSrc(item)
           return (
             <div className="queue-row" key={item.id}>
               <span className="queue-position">{index + 1}</span>
@@ -61,8 +63,8 @@ export function QueueView(): React.JSX.Element {
                 onClick={() => navigate(`/detalle/${encodeURIComponent(item.id)}`)}
                 title="Ver ficha"
               >
-                {item.posterCache ? (
-                  <img src={`mediacache://${item.posterCache}`} alt={title} />
+                {poster ? (
+                  <img src={poster} alt={title} />
                 ) : (
                   <PlaceholderPoster title={title} year={year} />
                 )}

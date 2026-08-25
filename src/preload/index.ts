@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { EVENTS, IPC } from '@shared/ipc-channels'
 import type {
+  AppCapabilities,
   AppConfig,
   ChapterMarks,
   DownloadEntry,
@@ -25,7 +26,20 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
+/** El escritorio lo puede todo; smbCredentials va en false: el Llavero de macOS se encarga. */
+const DESKTOP_CAPABILITIES: AppCapabilities = {
+  platform: 'desktop',
+  separateWindow: true,
+  pip: true,
+  revealInFiles: true,
+  chooseExternalPlayerFile: true,
+  smbCredentials: false,
+  mdnsDiscovery: true
+}
+
 const api: IpcApi = {
+  capabilities: DESKTOP_CAPABILITIES,
+
   getConfig: () => ipcRenderer.invoke(IPC.getConfig) as Promise<AppConfig>,
   saveConfig: (patch) => ipcRenderer.invoke(IPC.saveConfig, patch) as Promise<AppConfig>,
   testTmdbToken: (token) =>

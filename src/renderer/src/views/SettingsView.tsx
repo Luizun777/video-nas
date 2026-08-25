@@ -106,6 +106,39 @@ function ServerEditor({
         </div>
       </div>
 
+      {window.api.capabilities.smbCredentials && (
+        <div className="field-row">
+          <div style={{ flex: 1 }}>
+            <label className="field-label">Usuario SMB</label>
+            <input
+              value={server.username ?? ''}
+              autoComplete="off"
+              onChange={(e) => onChange({ ...server, username: e.target.value })}
+              placeholder="usuario del NAS"
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label className="field-label">Contraseña</label>
+            <input
+              type="password"
+              value={server.password ?? ''}
+              autoComplete="new-password"
+              onChange={(e) => onChange({ ...server, password: e.target.value })}
+              placeholder="contraseña"
+            />
+          </div>
+          <div style={{ flex: 0.7 }}>
+            <label className="field-label">Dominio (opcional)</label>
+            <input
+              value={server.domain ?? ''}
+              autoComplete="off"
+              onChange={(e) => onChange({ ...server, domain: e.target.value })}
+              placeholder="WORKGROUP"
+            />
+          </div>
+        </div>
+      )}
+
       <label className="field-label">Carpetas a escanear dentro del share</label>
       {server.folders.map((folder, index) => (
         <div className="folder-row" key={index}>
@@ -296,9 +329,11 @@ export function SettingsView(): React.JSX.Element {
           >
             + Agregar servidor
           </button>
-          <button className="btn btn-ghost" onClick={() => void discover()} disabled={discovering}>
-            {discovering ? 'Buscando…' : 'Buscar en la red'}
-          </button>
+          {window.api.capabilities.mdnsDiscovery && (
+            <button className="btn btn-ghost" onClick={() => void discover()} disabled={discovering}>
+              {discovering ? 'Buscando…' : 'Buscar en la red'}
+            </button>
+          )}
           <button
             className="btn btn-ghost"
             onClick={() => void window.api.refreshServerStatuses()}
@@ -427,7 +462,9 @@ export function SettingsView(): React.JSX.Element {
                   setDirty(true)
                 }}
               />
-              La que macOS tenga asociada al archivo
+              {window.api.capabilities.platform === 'android'
+                ? 'La que Android tenga asociada al video'
+                : 'La que macOS tenga asociada al archivo'}
             </label>
             {externalPlayers.map((player) => (
               <label className="radio-row" key={player.path}>
@@ -449,19 +486,21 @@ export function SettingsView(): React.JSX.Element {
                 {externalPlayerPath.split('/').pop()?.replace(/\.app$/, '') ?? externalPlayerPath}
               </label>
             )}
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() =>
-                void window.api.chooseExternalPlayer().then((path) => {
-                  if (path) {
-                    setExternalPlayerPath(path)
-                    setDirty(true)
-                  }
-                })
-              }
-            >
-              Elegir otra aplicación…
-            </button>
+            {window.api.capabilities.chooseExternalPlayerFile && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  void window.api.chooseExternalPlayer().then((path) => {
+                    if (path) {
+                      setExternalPlayerPath(path)
+                      setDirty(true)
+                    }
+                  })
+                }
+              >
+                Elegir otra aplicación…
+              </button>
+            )}
           </div>
         )}
 
@@ -507,6 +546,8 @@ export function SettingsView(): React.JSX.Element {
           <input
             value={downloadsPath}
             placeholder="Carpeta de descargas"
+            // En Android la carpeta es fija (almacenamiento de la app): no se edita.
+            disabled={window.api.capabilities.platform === 'android'}
             onChange={(e) => {
               setDownloadsPath(e.target.value)
               setDirty(true)
@@ -571,8 +612,8 @@ export function SettingsView(): React.JSX.Element {
           <p>
             <strong>Nunca abras el puerto 445 de SMB en tu router.</strong> Es uno de los puertos más
             escaneados por atacantes. La forma segura de ver tu NAS desde fuera es una VPN de malla
-            como Tailscale (basada en WireGuard): tu Mac y tu NAS quedan como si estuvieran en la
-            misma red local.
+            como Tailscale (basada en WireGuard): este dispositivo y tu NAS quedan como si
+            estuvieran en la misma red local.
           </p>
           <ol>
             <li>
@@ -581,7 +622,7 @@ export function SettingsView(): React.JSX.Element {
               de subred: <code>sudo tailscale up --advertise-routes=192.168.0.0/24</code>
             </li>
             <li>
-              Instala Tailscale en esta Mac e inicia sesión con la misma cuenta.
+              Instala Tailscale en este dispositivo e inicia sesión con la misma cuenta.
             </li>
             <li>
               Anota la dirección que Tailscale le da al NAS: una IP tipo <code>100.x.y.z</code> o un

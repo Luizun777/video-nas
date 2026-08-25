@@ -7,10 +7,23 @@
 
 const STREAM_URL_BASE = 'videofile://stream'
 
-export function videoStreamUrl(itemId: string, relPath?: string): string {
+export type VideoUrlResolver = (itemId: string, relPath?: string) => string
+
+// Default: el protocolo videofile:// de Electron. Android registra un resolver que
+// apunta al puente HTTP local (http://127.0.0.1:puerto) al arrancar. Es síncrono a
+// propósito: se usa directo en <video src>.
+let videoUrlResolver: VideoUrlResolver = (itemId, relPath) => {
   const params = new URLSearchParams({ itemId })
   if (relPath) params.set('relPath', relPath)
   return `${STREAM_URL_BASE}?${params.toString()}`
+}
+
+export function setVideoUrlResolver(next: VideoUrlResolver): void {
+  videoUrlResolver = next
+}
+
+export function videoStreamUrl(itemId: string, relPath?: string): string {
+  return videoUrlResolver(itemId, relPath)
 }
 
 export function parseVideoStreamUrl(url: string): { itemId: string; relPath?: string } | null {

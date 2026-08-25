@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ChapterMarks, ExtraDetails, PlayTarget } from '@shared/types'
 import { videoStreamUrl } from '@shared/playback-url'
+import { posterSrc } from '@shared/media-src'
 import { THUMB_SIZE, tmdbImageUrl } from '@shared/tmdb-images'
 import { decideNextUp } from '@shared/next-up'
 import { displayTitle, queuedItems, tmdbIndex, useAppStore } from '@/store/app-store'
@@ -338,6 +339,7 @@ export function VideoPlayer({
   }
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0
+  const queuePoster = decision.kind === 'queue' ? posterSrc(decision.item) : null
 
   // Recomendación al terminar una película, SOLO si no hay episodio ni cola pendientes.
   const recommendation = (() => {
@@ -406,10 +408,10 @@ export function VideoPlayer({
         <div className="player-next-up">
           <div className="player-next-up-title">A continuación (de tu cola) en {countdown}s</div>
           <div className="player-recommend">
-            {decision.item.posterCache && (
+            {queuePoster && (
               <img
                 className="player-recommend-poster"
-                src={`mediacache://${decision.item.posterCache}`}
+                src={queuePoster}
                 alt={displayTitle(decision.item)}
               />
             )}

@@ -19,6 +19,13 @@ export interface ServerConfig {
   /** IP, hostname.local, IP de tailnet (100.x.y.z) o nombre MagicDNS */
   host: string
   share: string
+  /**
+   * Credenciales SMB, usadas SOLO por Android (el desktop delega en el Llavero de macOS
+   * al montar y las ignora). Viven en el config.json del sandbox de la app.
+   */
+  username?: string
+  password?: string
+  domain?: string
   folders: ScanFolder[]
   enabled: boolean
 }
@@ -326,10 +333,49 @@ export interface DownloadsFile {
 }
 
 // ---------------------------------------------------------------------------
+// Capacidades por plataforma y progreso de reproducción
+// ---------------------------------------------------------------------------
+
+/** Qué sabe hacer la plataforma actual: el renderer oculta lo que no aplique. */
+export interface AppCapabilities {
+  platform: 'desktop' | 'android'
+  /** Ventana separada del reproductor (multi-ventana de Electron). */
+  separateWindow: boolean
+  pip: boolean
+  /** "Mostrar en Finder" o equivalente. */
+  revealInFiles: boolean
+  /** Diálogo del sistema para elegir una app externa concreta. */
+  chooseExternalPlayerFile: boolean
+  /** La plataforma necesita usuario/contraseña SMB por servidor. */
+  smbCredentials: boolean
+  mdnsDiscovery: boolean
+}
+
+export interface PlaybackProgressEntry {
+  /** `${itemId}::${relPath}` — misma convención que las descargas. */
+  key: string
+  itemId: string
+  relPath: string
+  positionSec: number
+  durationSec: number
+  /** true cuando se vio casi completo: sale de "Continuar viendo". */
+  finished: boolean
+  updatedAt: string
+}
+
+export interface ProgressFile {
+  version: 1
+  entries: Record<string, PlaybackProgressEntry>
+}
+
+// ---------------------------------------------------------------------------
 // Contrato IPC expuesto en window.api
 // ---------------------------------------------------------------------------
 
 export interface IpcApi {
+  /** Síncrona: features de la plataforma. El renderer decide qué UI mostrar. */
+  readonly capabilities: AppCapabilities
+
   getConfig(): Promise<AppConfig>
   saveConfig(patch: Partial<AppConfig>): Promise<AppConfig>
   testTmdbToken(token: string): Promise<{ ok: boolean; error?: string }>
@@ -374,6 +420,15 @@ export interface IpcApi {
   cancelDownload(itemId: string, relPath: string): Promise<void>
   deleteDownload(itemId: string, relPath: string): Promise<void>
   getDownloads(): Promise<DownloadEntry[]>
+
+  /**
+   * Progreso de reproducción ("continuar viendo"). Opcionales: el desktop todavía no
+   * los implementa, así que el renderer hace feature-detect antes de usarlos. finished
+   * lo calcula el store según el porcentaje visto.
+   */
+  getPlaybackProgress?(): Promise<PlaybackProgressEntry[]>
+  setPlaybackProgress?(entry: Omit<PlaybackProgressEntry, 'updatedAt' | 'finished'>): Promise<void>
+  clearPlaybackProgress?(key: string): Promise<void>
 
   onScanProgress(cb: (p: ScanProgress) => void): () => void
   onLibraryChanged(cb: (lib: Library) => void): () => void
