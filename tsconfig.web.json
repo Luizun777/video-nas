@@ -17,8 +17,15 @@
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@core/*": ["./src/core/*"],
+      "@mobile/*": ["./src/mobile/*"],
       "@/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/**/*", "src/core/**/*"]
+  "include": [
+    "src/renderer/**/*",
+    "src/shared/**/*",
+    "src/preload/**/*",
+    "src/core/**/*",
+    "src/mobile/**/*"
+  ]
 }
