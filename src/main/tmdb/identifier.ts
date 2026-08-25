@@ -1,5 +1,5 @@
 import type { IdentifyState, LibraryItem, MediaKind, TmdbMatch } from '@shared/types'
-import { normalizeForCompare } from '../scanner/name-parser'
+import { normalizeForCompare } from '@core/scanner/name-parser'
 import { getById, search, toMatch } from './client'
 import { cacheBackdrop, cachePoster } from './image-cache'
 

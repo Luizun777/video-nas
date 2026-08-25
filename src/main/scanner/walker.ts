@@ -1,7 +1,7 @@
 import { promises as fs, type Dirent } from 'node:fs'
 import { join } from 'node:path'
-import { hasVideoExtension } from './name-parser'
-import type { ScannedFile } from './grouper'
+import { hasVideoExtension } from '@core/scanner/name-parser'
+import type { ScannedFile } from '@core/scanner/grouper'
 
 /** Carpetas de metadatos de NAS y del sistema que no aportan nada al catálogo. */
 const IGNORED_DIRS = new Set([

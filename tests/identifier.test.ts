@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { pickBestMatch, titleAffinity, TITLE_SCORE } from '../src/main/tmdb/identifier'
-import { cleanTitle } from '../src/main/scanner/name-parser'
+import { cleanTitle } from '../src/core/scanner/name-parser'
 
 interface Raw {
   id: number

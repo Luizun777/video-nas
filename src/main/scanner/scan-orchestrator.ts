@@ -17,7 +17,7 @@ import {
   planTmdbMerges,
   type GroupedItem,
   type ScannedFile
-} from './grouper'
+} from '@core/scanner/grouper'
 import { walkVideos } from './walker'
 
 export type ProgressListener = (progress: ScanProgress) => void

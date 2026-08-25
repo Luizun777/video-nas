@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import type { ChapterMarks } from '@shared/types'
-import { findChapterMarks, parseChaptersFromBuffer } from './ebml-chapters'
+import { findChapterMarks, parseChaptersFromBuffer } from '@core/playback/ebml-chapters'
 
 /**
  * Solo se leen los primeros megabytes: en un mux normal los capítulos van antes de los

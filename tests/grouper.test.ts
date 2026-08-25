@@ -7,7 +7,7 @@ import {
   planTmdbMerges,
   type GroupedItem,
   type ScannedFile
-} from '../src/main/scanner/grouper'
+} from '../src/core/scanner/grouper'
 
 const GB = 1024 * 1024 * 1024
 const f = (relPath: string, size = 2 * GB): ScannedFile => ({ relPath, size })

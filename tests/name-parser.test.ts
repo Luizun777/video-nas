@@ -9,7 +9,7 @@ import {
   formatSize,
   extractQualityTags,
   describeVersion
-} from '../src/main/scanner/name-parser'
+} from '../src/core/scanner/name-parser'
 
 describe('cleanTitle — casos reales del NAS', () => {
   it('archivo suelto con año normal', () => {

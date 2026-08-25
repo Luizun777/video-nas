@@ -4,7 +4,7 @@ import {
   findChapterMarks,
   parseChaptersFromBuffer,
   type RawChapter
-} from '../src/main/playback/ebml-chapters'
+} from '../src/core/playback/ebml-chapters'
 
 // ---------------------------------------------------------------------------
 // Constructor mínimo de bytes EBML, para no depender de archivos MKV de prueba.
