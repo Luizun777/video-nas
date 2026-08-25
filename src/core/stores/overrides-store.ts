@@ -1,4 +1,5 @@
 import type { MetadataOverride, Overrides } from '@shared/types'
+import type { StoreIO } from '../io'
 import { JsonStore } from './json-store'
 
 // Archivo aparte de library.json a propósito: el escaneo puede regenerar el catálogo
@@ -6,8 +7,8 @@ import { JsonStore } from './json-store'
 
 let store: JsonStore<Overrides>
 
-export async function initOverridesStore(): Promise<Overrides> {
-  store = new JsonStore<Overrides>('overrides.json', {})
+export async function initOverridesStore(io: StoreIO): Promise<Overrides> {
+  store = new JsonStore<Overrides>(io, 'overrides.json', {})
   return store.load()
 }
 

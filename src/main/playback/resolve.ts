@@ -1,5 +1,5 @@
-import { getItem } from '../stores/library-store'
-import { getServerById } from '../stores/config-store'
+import { getItem } from '@core/stores/library-store'
+import { getServerById } from '@core/stores/config-store'
 import { getLocalCopy } from '../downloads/download-manager'
 import { resolveNasPath } from '../nas/mount-manager'
 

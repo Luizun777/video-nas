@@ -1,4 +1,5 @@
 import type { QueueEntry, QueueFile } from '@shared/types'
+import type { StoreIO } from '../io'
 import { JsonStore } from './json-store'
 import { getItem } from './library-store'
 
@@ -8,8 +9,8 @@ import { getItem } from './library-store'
 
 let store: JsonStore<QueueFile>
 
-export async function initQueueStore(): Promise<QueueFile> {
-  store = new JsonStore<QueueFile>('queue.json', { version: 1, entries: [] })
+export async function initQueueStore(io: StoreIO): Promise<QueueFile> {
+  store = new JsonStore<QueueFile>(io, 'queue.json', { version: 1, entries: [] })
   const data = await store.load()
   if (!Array.isArray(data.entries)) data.entries = []
   return data

@@ -1,12 +1,14 @@
 import type { Library, LibraryItem } from '@shared/types'
+import type { StoreIO } from '../io'
+import { deepClone } from '../util'
 import { JsonStore } from './json-store'
 
 const EMPTY: Library = { version: 1, updatedAt: new Date(0).toISOString(), items: {} }
 
 let store: JsonStore<Library>
 
-export async function initLibraryStore(): Promise<Library> {
-  store = new JsonStore<Library>('library.json', structuredClone(EMPTY))
+export async function initLibraryStore(io: StoreIO): Promise<Library> {
+  store = new JsonStore<Library>(io, 'library.json', deepClone(EMPTY))
   const library = await store.load()
   if (!library.items || typeof library.items !== 'object') library.items = {}
   return library

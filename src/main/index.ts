@@ -5,10 +5,12 @@ import { Readable } from 'node:stream'
 import { app, BrowserWindow, protocol } from 'electron'
 import { registerIpc } from './ipc'
 import { createMainWindow } from './main-window'
-import { initConfigStore } from './stores/config-store'
-import { initLibraryStore } from './stores/library-store'
-import { initOverridesStore } from './stores/overrides-store'
-import { initQueueStore } from './stores/queue-store'
+import { initConfigStore } from '@core/stores/config-store'
+import { initLibraryStore } from '@core/stores/library-store'
+import { initOverridesStore } from '@core/stores/overrides-store'
+import { initQueueStore } from '@core/stores/queue-store'
+import { nodeStoreIO } from './adapters/node-store-io'
+import { loadSeedToken } from './adapters/node-seed'
 import { initDownloadManager } from './downloads/download-manager'
 import { registerVideoFileProtocol } from './playback/stream-protocol'
 import { refreshStatuses, startScan } from './scanner/scan-orchestrator'
@@ -63,7 +65,15 @@ void app.whenReady().then(async () => {
   registerVideoFileProtocol()
 
   // downloads depende de que config-store ya tenga downloadsPath resuelto.
-  await Promise.all([initConfigStore(), initLibraryStore(), initOverridesStore(), initQueueStore()])
+  await Promise.all([
+    initConfigStore(nodeStoreIO, {
+      defaultDownloadsPath: join(app.getPath('videos'), 'Video NAS'),
+      loadSeedToken
+    }),
+    initLibraryStore(nodeStoreIO),
+    initOverridesStore(nodeStoreIO),
+    initQueueStore(nodeStoreIO)
+  ])
   await Promise.all([ensureCacheDirs(), initDownloadManager()])
 
   registerIpc()

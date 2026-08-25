@@ -1,8 +1,6 @@
-import { promises as fs } from 'node:fs'
-import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
-import { app } from 'electron'
 import type { AppConfig, ServerConfig } from '@shared/types'
+import type { StoreIO } from '../io'
+import { deepClone, newId } from '../util'
 import { JsonStore } from './json-store'
 
 const DEFAULT_SERVER: ServerConfig = {
@@ -28,52 +26,46 @@ const DEFAULT_CONFIG: AppConfig = {
   autoSkipIntro: true
 }
 
+/** Lo que la plataforma aporta al store de configuración. */
+export interface ConfigPlatform {
+  /** Carpeta de descargas por defecto (desktop: ~/Movies/Video NAS). */
+  defaultDownloadsPath: string
+  /**
+   * Token de desarrollo: seed.config.json (gitignored) en desktop, define de build en
+   * Android. Solo se consulta si aún no hay token guardado. Nunca vive en el código.
+   */
+  loadSeedToken?: () => Promise<string | null>
+}
+
 let store: JsonStore<AppConfig>
 
 export function newServerId(): string {
-  return `srv_${randomUUID().slice(0, 8)}`
+  return newId('srv')
 }
 
-/**
- * Lee el token de `seed.config.json` (gitignored) solo en desarrollo y solo si aún no
- * hay token guardado. El token nunca vive en el código fuente.
- */
-async function importSeedToken(config: AppConfig): Promise<boolean> {
-  if (config.tmdbBearerToken) return false
-  const candidates = [
-    join(app.getAppPath(), 'seed.config.json'),
-    join(process.cwd(), 'seed.config.json')
-  ]
-  for (const candidate of candidates) {
-    try {
-      const raw = await fs.readFile(candidate, 'utf-8')
-      const parsed = JSON.parse(raw) as { tmdbBearerToken?: string }
-      if (parsed.tmdbBearerToken) {
-        config.tmdbBearerToken = parsed.tmdbBearerToken
-        return true
-      }
-    } catch {
-      // seed.config.json es opcional
-    }
-  }
-  return false
-}
-
-export async function initConfigStore(): Promise<AppConfig> {
-  store = new JsonStore<AppConfig>('config.json', structuredClone(DEFAULT_CONFIG))
+export async function initConfigStore(io: StoreIO, platform: ConfigPlatform): Promise<AppConfig> {
+  store = new JsonStore<AppConfig>(io, 'config.json', deepClone(DEFAULT_CONFIG))
   const config = await store.load()
 
   if (!Array.isArray(config.servers) || config.servers.length === 0) {
-    config.servers = [structuredClone(DEFAULT_SERVER)]
+    config.servers = [deepClone(DEFAULT_SERVER)]
   }
   config.language ||= 'es-MX'
-  config.downloadsPath ||= join(app.getPath('videos'), 'Video NAS')
+  config.downloadsPath ||= platform.defaultDownloadsPath
   config.playbackMode ||= 'embedded'
   // Con === undefined y no ||=: un false guardado a propósito debe sobrevivir.
   if (config.autoPlayNextEpisode === undefined) config.autoPlayNextEpisode = true
   if (config.autoSkipIntro === undefined) config.autoSkipIntro = true
 
-  const seeded = await importSeedToken(config)
+  let seeded = false
+  if (!config.tmdbBearerToken && platform.loadSeedToken) {
+    const token = await platform.loadSeedToken()
+    if (token) {
+      config.tmdbBearerToken = token
+      seeded = true
+    }
+  }
+
   store.set(config)
   if (seeded) await store.flush()
   return config

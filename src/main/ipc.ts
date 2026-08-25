@@ -18,13 +18,13 @@ import type {
   ServerStatus,
   TmdbSearchResult
 } from '@shared/types'
-import { getConfig, saveConfig } from './stores/config-store'
-import { flushLibrary, getItem, getLibrary, putItem, removeItems } from './stores/library-store'
+import { getConfig, saveConfig } from '@core/stores/config-store'
+import { flushLibrary, getItem, getLibrary, putItem, removeItems } from '@core/stores/library-store'
 import {
   clearOverride as clearOverrideEntry,
   flushOverrides,
   setOverride
-} from './stores/overrides-store'
+} from '@core/stores/overrides-store'
 import { discoverSmbServers } from './nas/discovery'
 import { resolveAbsolutePath } from './playback/resolve'
 import { readChapterMarks } from './playback/mkv-chapter-reader'
@@ -43,7 +43,7 @@ import {
   getQueue,
   removeFromQueue,
   shiftQueue
-} from './stores/queue-store'
+} from '@core/stores/queue-store'
 import {
   cancelDownload,
   deleteDownload,

@@ -5,9 +5,9 @@ import type {
   ServerConfig,
   ServerStatus
 } from '@shared/types'
-import { getConfig } from '../stores/config-store'
-import { flushLibrary, getLibrary, putItem, removeItems } from '../stores/library-store'
-import { getOverride, setOverride, clearOverride } from '../stores/overrides-store'
+import { getConfig } from '@core/stores/config-store'
+import { flushLibrary, getLibrary, putItem, removeItems } from '@core/stores/library-store'
+import { getOverride, setOverride, clearOverride } from '@core/stores/overrides-store'
 import { ensureMounted } from '../nas/mount-manager'
 import { identifyByTmdbId, identifyItem, type IdentifyContext } from '../tmdb/identifier'
 import { ensureCacheDirs } from '../tmdb/image-cache'

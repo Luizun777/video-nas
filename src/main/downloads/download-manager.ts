@@ -3,9 +3,10 @@ import { dirname, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { app } from 'electron'
 import type { DownloadEntry, DownloadsFile, PlayResult } from '@shared/types'
-import { JsonStore } from '../stores/json-store'
-import { getConfig, getServerById } from '../stores/config-store'
-import { getItem } from '../stores/library-store'
+import { JsonStore } from '@core/stores/json-store'
+import { getConfig, getServerById } from '@core/stores/config-store'
+import { getItem } from '@core/stores/library-store'
+import { nodeStoreIO } from '../adapters/node-store-io'
 import { resolveNasPath } from '../nas/mount-manager'
 
 const PROGRESS_THROTTLE_MS = 500
@@ -277,7 +278,7 @@ export function getLocalCopy(itemId: string, relPath: string): string | null {
 }
 
 export async function initDownloadManager(): Promise<void> {
-  store = new JsonStore<DownloadsFile>('downloads.json', { version: 1, entries: {} })
+  store = new JsonStore<DownloadsFile>(nodeStoreIO, 'downloads.json', { version: 1, entries: {} })
   const data = await store.load()
 
   // Descargas que quedaron a medias al cerrar la app: no se reanudan solas, se marcan
