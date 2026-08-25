@@ -124,11 +124,6 @@ select:focus {
   transition: background 0.15s, color 0.15s;
 }
 
-.nav-link:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .nav-link.active {
   color: var(--text);
   background: rgba(255, 255, 255, 0.12);
@@ -251,10 +246,6 @@ select:focus {
   white-space: nowrap;
 }
 
-.btn:hover {
-  background: rgba(255, 255, 255, 0.22);
-}
-
 .btn:active {
   transform: scale(0.98);
 }
@@ -264,17 +255,9 @@ select:focus {
   color: #fff;
 }
 
-.btn-primary:hover {
-  background: var(--accent-hover);
-}
-
 .btn-ghost {
   background: transparent;
   border: 1px solid var(--border);
-}
-
-.btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .btn-sm {
@@ -344,10 +327,6 @@ select:focus {
   flex: 1;
 }
 
-.card:hover {
-  transform: translateY(-4px) scale(1.03);
-}
-
 .card-poster {
   position: relative;
   aspect-ratio: 2 / 3;
@@ -362,11 +341,6 @@ select:focus {
   height: 100%;
   object-fit: cover;
   display: block;
-}
-
-.card:hover .card-poster {
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
-  outline: 2px solid rgba(255, 255, 255, 0.5);
 }
 
 .card-label {
@@ -628,11 +602,6 @@ select:focus {
   transition: background 0.15s;
 }
 
-.episode:hover {
-  background: #1e1e28;
-  border-color: #3a3a4a;
-}
-
 .episode-main {
   flex: 1;
   display: flex;
@@ -866,11 +835,6 @@ select:focus {
   transition: background 0.15s;
 }
 
-.result:hover {
-  background: var(--bg-card);
-  border-color: var(--border);
-}
-
 .result-poster {
   width: 62px;
   flex: 0 0 62px;
@@ -1060,10 +1024,6 @@ select:focus {
   margin-bottom: 12px;
 }
 
-.player-progress:hover {
-  height: 8px;
-}
-
 .player-progress-fill {
   height: 100%;
   background: var(--accent);
@@ -1099,10 +1059,6 @@ select:focus {
   font-weight: 700;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
   z-index: 2;
-}
-
-.player-skip-intro:hover {
-  background: #fff;
 }
 
 .player-next-up {
@@ -1290,4 +1246,329 @@ select:focus {
 
 .spacer {
   flex: 1;
+}
+
+/* ======================================================= touch y responsive
+   Port a Android: el mismo CSS sirve al desktop (Electron), a la tablet y al
+   teléfono. Tablet en horizontal (~1280px) no entra en ningún breakpoint. */
+
+/* Hover solo donde hay puntero de verdad: en táctil los estados :hover se
+   quedan "pegados" tras cada tap. Las reglas originales se movieron aquí. */
+@media (hover: hover) {
+  .nav-link:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .btn:hover {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .card:hover {
+    transform: translateY(-4px) scale(1.03);
+  }
+
+  .card:hover .card-poster {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+    outline: 2px solid rgba(255, 255, 255, 0.5);
+  }
+
+  .episode:hover {
+    background: #1e1e28;
+    border-color: #3a3a4a;
+  }
+
+  .player-progress:hover {
+    height: 8px;
+  }
+
+  .player-skip-intro:hover {
+    background: #fff;
+  }
+
+  .result:hover {
+    background: var(--bg-card);
+    border-color: var(--border);
+  }
+}
+
+/* Targets táctiles con puntero grueso (dedo). */
+@media (pointer: coarse) {
+  input,
+  select {
+    min-height: 44px;
+  }
+
+  .btn-sm {
+    min-height: 42px;
+    padding: 9px 14px;
+  }
+
+  .nav-link {
+    padding: 10px 14px;
+  }
+
+  /* La banda visual sigue siendo de 6px, pero el área de tap crece a ~26px. */
+  .player-progress {
+    height: 6px;
+    padding: 10px 0;
+    background-clip: content-box;
+    margin-bottom: 6px;
+  }
+
+  /* El volumen se controla con los botones físicos del dispositivo. */
+  .player-volume {
+    display: none;
+  }
+
+  /* En táctil se hace scroll con el dedo: las barras solo ensucian. */
+  .nav::-webkit-scrollbar,
+  .row-scroller::-webkit-scrollbar,
+  .season-tabs::-webkit-scrollbar,
+  .cast-row::-webkit-scrollbar,
+  .related-scroller::-webkit-scrollbar {
+    display: none;
+  }
+
+  .queue-poster {
+    width: 60px;
+    flex: 0 0 60px;
+  }
+}
+
+/* Shell móvil (lo marca main.mobile.tsx): sin traffic lights de macOS, sin
+   app-region de Electron, y con las safe areas del dispositivo. */
+body.mobile-shell .nav {
+  -webkit-app-region: none;
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-top: env(safe-area-inset-top);
+  height: calc(var(--nav-height) + env(safe-area-inset-top));
+  flex-basis: calc(var(--nav-height) + env(safe-area-inset-top));
+}
+
+body.mobile-shell .player-header {
+  padding-top: calc(20px + env(safe-area-inset-top));
+}
+
+body.mobile-shell .player-bottom {
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+}
+
+body.mobile-shell .scan-bar {
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+}
+
+/* Tablet en vertical y ventanas angostas. */
+@media (max-width: 900px) {
+  .nav {
+    gap: 12px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .nav-count {
+    display: none;
+  }
+
+  .nav-search {
+    width: 150px;
+  }
+
+  .page {
+    padding: 20px 16px 56px;
+  }
+
+  .row-header {
+    padding: 0 16px;
+  }
+
+  .row-scroller {
+    padding: 6px 16px 14px;
+  }
+
+  .hero {
+    min-height: 320px;
+    padding: 28px 16px;
+  }
+
+  .hero-title {
+    font-size: 32px;
+  }
+
+  .detail-hero {
+    padding: 24px 16px;
+    min-height: 300px;
+  }
+
+  .detail-body {
+    padding: 0 16px 48px;
+  }
+
+  .detail-poster {
+    width: 150px;
+    flex: 0 0 150px;
+  }
+
+  .detail-title {
+    font-size: 28px;
+  }
+
+  .card {
+    width: 142px;
+    flex: 0 0 142px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 18px 12px;
+  }
+
+  .scan-track {
+    width: 130px;
+    flex: 0 0 130px;
+  }
+
+  .toasts {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+  }
+
+  .player-skip-intro,
+  .player-next-up {
+    right: 16px;
+    bottom: 104px;
+    max-width: calc(100vw - 32px);
+  }
+}
+
+/* Teléfonos. */
+@media (max-width: 600px) {
+  :root {
+    --nav-height: 56px;
+  }
+
+  .nav {
+    gap: 8px;
+    overflow-x: auto;
+  }
+
+  .nav-links {
+    flex: 0 0 auto;
+  }
+
+  .nav-search {
+    width: 130px;
+    flex: 0 0 130px;
+  }
+
+  .hero {
+    min-height: 250px;
+    padding: 22px 14px;
+  }
+
+  .hero-title {
+    font-size: 26px;
+  }
+
+  .hero-actions {
+    flex-wrap: wrap;
+  }
+
+  .page-title {
+    font-size: 22px;
+  }
+
+  .card {
+    width: 112px;
+    flex: 0 0 112px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 14px 10px;
+  }
+
+  .detail-flex {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .detail-poster {
+    width: 128px;
+    flex: 0 0 auto;
+  }
+
+  .detail-title {
+    font-size: 24px;
+  }
+
+  .season-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .season-tab {
+    white-space: nowrap;
+  }
+
+  .episode {
+    padding: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .episode-number {
+    min-width: 28px;
+    font-size: 15px;
+  }
+
+  /* La fila entera del episodio ya es tappable: el pill "Reproducir" solo estorba. */
+  .episode-main > .btn {
+    display: none;
+  }
+
+  .queue-row {
+    flex-wrap: wrap;
+  }
+
+  .server-head {
+    flex-wrap: wrap;
+  }
+
+  .folder-row {
+    flex-wrap: wrap;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .player-header {
+    padding: 14px;
+  }
+
+  .player-bottom {
+    padding: 12px 14px 16px;
+  }
+
+  .player-buttons {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .player-title {
+    font-size: 16px;
+  }
 }

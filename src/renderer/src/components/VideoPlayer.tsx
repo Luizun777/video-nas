@@ -94,11 +94,20 @@ export function VideoPlayer({
   // Solo se ofrece marcar el intro a mano cuando el archivo no dice dónde está.
   const canMarkIntro = isSeries && chapterMarks.introEndSeconds === undefined
 
+  // Pantallas táctiles: no hay mousemove real, así que el tap sobre el video alterna
+  // los controles (patrón de reproductor móvil); pausar se hace con el botón.
+  const isCoarsePointer = useMemo(() => window.matchMedia('(pointer: coarse)').matches, [])
+
   const revealControls = useCallback(() => {
     setControlsVisible(true)
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
     hideTimerRef.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_DELAY_MS)
   }, [])
+
+  const handleVideoTap = useCallback(() => {
+    if (controlsVisible) setControlsVisible(false)
+    else revealControls()
+  }, [controlsVisible, revealControls])
 
   // Cada vez que cambia lo que se reproduce (incluye avanzar de episodio/cola): estado limpio.
   useEffect(() => {
@@ -358,7 +367,7 @@ export function VideoPlayer({
     <div
       className="player-overlay"
       ref={containerRef}
-      onMouseMove={revealControls}
+      onMouseMove={isCoarsePointer ? undefined : revealControls}
       onDoubleClick={toggleFullscreen}
     >
       <video
@@ -366,7 +375,7 @@ export function VideoPlayer({
         className="player-video"
         src={videoStreamUrl(itemId, effectiveRelPath)}
         autoPlay
-        onClick={togglePlay}
+        onClick={isCoarsePointer ? handleVideoTap : togglePlay}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onLoadedMetadata={(e) => {
