@@ -35,6 +35,36 @@ export interface ImageCacheAdapter {
   cacheBackdrop(kind: MediaKind, tmdbId: number, tmdbPath: string | null): Promise<string | undefined>
 }
 
+/**
+ * Movimiento de bytes de las descargas offline. El estado (cola, entradas, progreso)
+ * vive en core; los streams/statfs (Node) o el copiado nativo (Kotlin) viven aquí.
+ */
+export interface DownloadTransfer {
+  /** Tamaño del archivo de origen en el NAS, o error legible si no está accesible. */
+  statSource(server: ServerConfig, relPath: string): Promise<{ size: number } | { error: string }>
+  /** Bytes libres en el volumen de descargas, o null si no se pudo comprobar. */
+  freeBytes(downloadsPath: string): Promise<number | null>
+  ensureDir(dirPath: string): Promise<void>
+  /**
+   * Copia el origen a partPath reportando progreso (ya throttled). Si cancel(key)
+   * aborta la copia, debe rechazar con un Error cuyo message sea DOWNLOAD_CANCELLED.
+   */
+  copy(req: {
+    key: string
+    server: ServerConfig
+    relPath: string
+    partPath: string
+    totalBytes: number
+    onProgress: (bytesDone: number) => void
+  }): Promise<void>
+  /** Aborta la copia en curso de key, si la hay. */
+  cancel(key: string): void
+  /** Renombra la copia terminada: .part → destino definitivo. */
+  finalize(partPath: string, localPath: string): Promise<void>
+  deleteFile(path: string): Promise<void>
+  exists(path: string): Promise<boolean>
+}
+
 /** Lo que el escáner necesita de la plataforma. */
 export interface ScanEnv {
   /**

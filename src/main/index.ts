@@ -11,7 +11,8 @@ import { initOverridesStore } from '@core/stores/overrides-store'
 import { initQueueStore } from '@core/stores/queue-store'
 import { nodeStoreIO } from './adapters/node-store-io'
 import { loadSeedToken } from './adapters/node-seed'
-import { initDownloadManager } from './downloads/download-manager'
+import { initDownloadManager } from '@core/downloads/download-manager'
+import { nodeDownloadTransfer } from './adapters/node-download-transfer'
 import { registerVideoFileProtocol } from './playback/stream-protocol'
 import { initScanner, refreshStatuses, startScan } from '@core/scanner/scan-orchestrator'
 import { desktopScanEnv } from './adapters/desktop-scan-env'
@@ -75,7 +76,7 @@ void app.whenReady().then(async () => {
     initOverridesStore(nodeStoreIO),
     initQueueStore(nodeStoreIO)
   ])
-  await Promise.all([ensureCacheDirs(), initDownloadManager()])
+  await Promise.all([ensureCacheDirs(), initDownloadManager(nodeStoreIO, nodeDownloadTransfer)])
 
   initScanner(desktopScanEnv)
   registerIpc()

@@ -1,21 +1,17 @@
-import { createReadStream, createWriteStream, existsSync, promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { pipeline } from 'node:stream/promises'
-import { app } from 'electron'
 import type { DownloadEntry, DownloadsFile, PlayResult } from '@shared/types'
-import { JsonStore } from '@core/stores/json-store'
-import { getConfig, getServerById } from '@core/stores/config-store'
-import { getItem } from '@core/stores/library-store'
-import { nodeStoreIO } from '../adapters/node-store-io'
-import { resolveNasPath } from '../nas/mount-manager'
+import type { DownloadTransfer, StoreIO } from '../io'
+import { JsonStore } from '../stores/json-store'
+import { getConfig, getServerById } from '../stores/config-store'
+import { getItem } from '../stores/library-store'
+import { pickTargetRelPath } from '../playback/resolve-target'
 
-const PROGRESS_THROTTLE_MS = 500
 /** Margen sobre el tamaño del archivo para no dejar el disco completamente lleno. */
 const FREE_SPACE_MARGIN = 1.05
-/** Señal interna para distinguir una cancelación deliberada de un error real de red/IO. */
-const CANCELLED = 'CANCELLED'
+/** Señal para distinguir una cancelación deliberada de un error real de red/IO. */
+export const DOWNLOAD_CANCELLED = 'CANCELLED'
 
 let store: JsonStore<DownloadsFile>
+let transfer: DownloadTransfer
 
 export type DownloadsListener = (entries: DownloadEntry[]) => void
 const listeners = new Set<DownloadsListener>()
@@ -35,11 +31,18 @@ export function getDownloads(): DownloadEntry[] {
 }
 
 function getDownloadsPath(): string {
-  return getConfig().downloadsPath ?? join(app.getPath('videos'), 'Video NAS')
+  // initConfigStore siempre deja downloadsPath resuelto antes de que esto corra.
+  return getConfig().downloadsPath!
 }
 
 function keyOf(itemId: string, relPath: string): string {
   return `${itemId}::${relPath}`
+}
+
+/** dirname POSIX suficiente para rutas construidas con "/" (sin fs ni node:path). */
+function parentDir(path: string): string {
+  const slash = path.lastIndexOf('/')
+  return slash > 0 ? path.slice(0, slash) : path
 }
 
 function updateEntry(key: string, patch: Partial<DownloadEntry>): void {
@@ -85,47 +88,14 @@ function uniqueLocalPath(basePath: string, ownKey: string): string {
 }
 
 async function hasEnoughSpace(bytes: number): Promise<boolean> {
-  try {
-    const stats = await fs.statfs(getDownloadsPath())
-    const freeBytes = stats.bavail * stats.bsize
-    return freeBytes > bytes * FREE_SPACE_MARGIN
-  } catch {
-    // No se pudo comprobar (ruta aún no existe, filesystem no lo soporta): no bloqueamos.
-    return true
-  }
+  const free = await transfer.freeBytes(getDownloadsPath())
+  // null = no se pudo comprobar (ruta aún no existe, fs sin statfs): no bloqueamos.
+  if (free === null) return true
+  return free > bytes * FREE_SPACE_MARGIN
 }
 
-/** Aborta la copia en curso de `key`, si la hay. Ver runDownload/copyFile más abajo. */
-const activeAborts = new Map<string, () => void>()
-
-async function copyFile(
-  key: string,
-  srcPath: string,
-  partPath: string,
-  totalBytes: number,
-  onProgress: (bytesDone: number) => void
-): Promise<void> {
-  const readStream = createReadStream(srcPath)
-  const writeStream = createWriteStream(partPath)
-
-  let bytesDone = 0
-  let lastEmit = 0
-  readStream.on('data', (chunk: Buffer) => {
-    bytesDone += chunk.length
-    const now = Date.now()
-    if (now - lastEmit >= PROGRESS_THROTTLE_MS || bytesDone >= totalBytes) {
-      lastEmit = now
-      onProgress(bytesDone)
-    }
-  })
-
-  activeAborts.set(key, () => readStream.destroy(new Error(CANCELLED)))
-  try {
-    await pipeline(readStream, writeStream)
-  } finally {
-    activeAborts.delete(key)
-  }
-}
+/** Claves con copia en curso: cancelDownload decide entre abortar o limpiar la cola. */
+const activeKeys = new Set<string>()
 
 const queue: string[] = []
 let processing = false
@@ -157,18 +127,24 @@ async function runDownload(key: string): Promise<void> {
   const server = getServerById(item.serverId)
   if (!server) return void (await failEntry(key, 'El servidor de este título ya no está configurado.'))
 
-  const resolved = await resolveNasPath(server, entry.relPath)
-  if ('error' in resolved) return void (await failEntry(key, resolved.error))
+  const source = await transfer.statSource(server, entry.relPath)
+  if ('error' in source) return void (await failEntry(key, source.error))
 
   updateEntry(key, { state: 'downloading' })
   const partPath = `${entry.localPath}.part`
-  await fs.mkdir(dirname(entry.localPath), { recursive: true })
+  await transfer.ensureDir(parentDir(entry.localPath))
 
+  activeKeys.add(key)
   try {
-    await copyFile(key, resolved.absPath, partPath, entry.totalBytes, (bytesDone) => {
-      updateEntry(key, { bytesDone })
+    await transfer.copy({
+      key,
+      server,
+      relPath: entry.relPath,
+      partPath,
+      totalBytes: entry.totalBytes,
+      onProgress: (bytesDone) => updateEntry(key, { bytesDone })
     })
-    await fs.rename(partPath, entry.localPath)
+    await transfer.finalize(partPath, entry.localPath)
     updateEntry(key, {
       state: 'done',
       bytesDone: entry.totalBytes,
@@ -176,12 +152,14 @@ async function runDownload(key: string): Promise<void> {
     })
     await store.flush()
   } catch (error) {
-    await fs.unlink(partPath).catch(() => {})
-    if ((error as Error).message === CANCELLED) {
+    await transfer.deleteFile(partPath).catch(() => {})
+    if ((error as Error).message === DOWNLOAD_CANCELLED) {
       removeEntry(key)
     } else {
       await failEntry(key, `Error al copiar el archivo: ${(error as Error).message}`)
     }
+  } finally {
+    activeKeys.delete(key)
   }
 }
 
@@ -189,7 +167,7 @@ export async function startDownload(itemId: string, relPath?: string): Promise<P
   const item = getItem(itemId)
   if (!item) return { ok: false, error: 'No se encontró el título en la biblioteca.' }
 
-  const target = relPath ?? item.videoRelPath ?? item.episodes?.[0]?.relPath ?? item.relPath
+  const target = pickTargetRelPath(item, relPath)
   const key = keyOf(itemId, target)
 
   const existing = store.get().entries[key]
@@ -200,21 +178,15 @@ export async function startDownload(itemId: string, relPath?: string): Promise<P
   const server = getServerById(item.serverId)
   if (!server) return { ok: false, error: 'El servidor de este título ya no está configurado.' }
 
-  const resolved = await resolveNasPath(server, target)
-  if ('error' in resolved) return { ok: false, error: resolved.error }
-
-  let totalBytes: number
-  try {
-    totalBytes = (await fs.stat(resolved.absPath)).size
-  } catch {
-    return { ok: false, error: 'No se pudo leer el archivo de origen en el NAS.' }
-  }
+  const source = await transfer.statSource(server, target)
+  if ('error' in source) return { ok: false, error: source.error }
+  const totalBytes = source.size
 
   if (!(await hasEnoughSpace(totalBytes))) {
     return { ok: false, error: 'No hay suficiente espacio libre en el disco para esta descarga.' }
   }
 
-  const localPath = uniqueLocalPath(join(getDownloadsPath(), target), key)
+  const localPath = uniqueLocalPath(`${getDownloadsPath()}/${target}`, key)
 
   store.update((draft) => {
     draft.entries[key] = {
@@ -239,15 +211,14 @@ export async function cancelDownload(itemId: string, relPath: string): Promise<v
   const entry = store.get().entries[key]
   if (!entry) return
 
-  const abort = activeAborts.get(key)
-  if (abort) {
-    abort() // dispara el catch de runDownload, que borra la entrada y el .part
+  if (activeKeys.has(key)) {
+    transfer.cancel(key) // dispara el catch de runDownload, que borra la entrada y el .part
     return
   }
 
   const queueIndex = queue.indexOf(key)
   if (queueIndex !== -1) queue.splice(queueIndex, 1)
-  await fs.unlink(`${entry.localPath}.part`).catch(() => {})
+  await transfer.deleteFile(`${entry.localPath}.part`).catch(() => {})
   removeEntry(key)
 }
 
@@ -261,41 +232,51 @@ export async function deleteDownload(itemId: string, relPath: string): Promise<v
     return
   }
 
-  await fs.unlink(entry.localPath).catch(() => {})
+  await transfer.deleteFile(entry.localPath).catch(() => {})
   removeEntry(key)
 }
 
-/** Ruta local si ya está descargada. Si el usuario borró el archivo por fuera, se limpia sola. */
+/**
+ * Ruta local si ya está descargada. Consulta solo el estado en memoria (síncrona a
+ * propósito: la URL de streaming de Android se construye sin await). La validación de
+ * que el archivo siga existiendo corre en init y en quien reproduce.
+ */
 export function getLocalCopy(itemId: string, relPath: string): string | null {
-  const key = keyOf(itemId, relPath)
-  const entry = store.get().entries[key]
-  if (!entry || entry.state !== 'done') return null
-  if (!existsSync(entry.localPath)) {
-    removeEntry(key)
-    return null
-  }
-  return entry.localPath
+  const entry = store.get().entries[keyOf(itemId, relPath)]
+  return entry && entry.state === 'done' ? entry.localPath : null
 }
 
-export async function initDownloadManager(): Promise<void> {
-  store = new JsonStore<DownloadsFile>(nodeStoreIO, 'downloads.json', { version: 1, entries: {} })
+export async function initDownloadManager(io: StoreIO, downloadTransfer: DownloadTransfer): Promise<void> {
+  transfer = downloadTransfer
+  store = new JsonStore<DownloadsFile>(io, 'downloads.json', { version: 1, entries: {} })
   const data = await store.load()
+
+  let dirty = false
 
   // Descargas que quedaron a medias al cerrar la app: no se reanudan solas, se marcan
   // como error para que el usuario decida si reintenta.
-  let dirty = false
   for (const entry of Object.values(data.entries)) {
     if (entry.state === 'queued' || entry.state === 'downloading') {
       entry.state = 'error'
       entry.error = 'Descarga interrumpida al cerrar la app.'
       dirty = true
-      void fs.unlink(`${entry.localPath}.part`).catch(() => {})
+      void transfer.deleteFile(`${entry.localPath}.part`).catch(() => {})
     }
   }
+
+  // Copias que el usuario borró por fuera: se podan aquí (getLocalCopy ya no toca disco).
+  for (const entry of Object.values(data.entries)) {
+    if (entry.state !== 'done') continue
+    if (!(await transfer.exists(entry.localPath))) {
+      delete data.entries[entry.key]
+      dirty = true
+    }
+  }
+
   if (dirty) {
     store.set(data)
     await store.flush()
   }
 
-  await fs.mkdir(getDownloadsPath(), { recursive: true }).catch(() => {})
+  await transfer.ensureDir(getDownloadsPath()).catch(() => {})
 }

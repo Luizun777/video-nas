@@ -50,7 +50,7 @@ import {
   getDownloads,
   onDownloadsChanged,
   startDownload
-} from './downloads/download-manager'
+} from '@core/downloads/download-manager'
 import {
   cancelScan,
   getProgress,
