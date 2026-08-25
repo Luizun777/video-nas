@@ -12,6 +12,12 @@ const NEXT_UP_THRESHOLD_SECONDS = 30
 const NEXT_UP_COUNTDOWN_SECONDS = 15
 const CONTROLS_HIDE_DELAY_MS = 3000
 const SEEK_STEP_SECONDS = 10
+const UNSUPPORTED_CHECK_INTERVAL_MS = 4000
+/** Strikes consecutivos con audio en 0 bytes antes de decidir "pista no soportada". */
+const SILENT_AUDIO_STRIKES = 2
+
+/** Cuenta acumulada de bytes de audio decodificados: Chromium-only, no estándar. */
+type VideoWithAudioByteCount = HTMLVideoElement & { webkitAudioDecodedByteCount?: number }
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
@@ -59,7 +65,9 @@ export function VideoPlayer({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedRef = useRef(0)
   const resumeAtRef = useRef<number | null>(null)
-  const blackScreenFiredRef = useRef(false)
+  const unsupportedFiredRef = useRef(false)
+  const silentAudioStrikesRef = useRef(0)
+  const lastAudioCheckTimeRef = useRef(0)
   const handleErrorRef = useRef<() => void>(() => {})
 
   const [playing, setPlaying] = useState(false)
@@ -138,7 +146,6 @@ export function VideoPlayer({
     setNextUpState('hidden')
     setCountdown(NEXT_UP_COUNTDOWN_SECONDS)
     setChapterMarks({})
-    blackScreenFiredRef.current = false
     revealControls()
 
     let cancelled = false
@@ -166,22 +173,47 @@ export function VideoPlayer({
     }
   }, [itemId, effectiveRelPath, startAt])
 
-  // Watchdog de pista de video indecodificable (HEVC 4K 10-bit en tablets): NO dispara
-  // onError — el audio corre (o el elemento queda pausado) con pantalla negra. Con la
-  // metadata cargada, un stream decodificable ya reporta dimensiones; si tras unos
-  // segundos sigue en 0, jamás habrá frames → mismo fallback que un error de formato.
+  // Watchdog de pistas indecodificables que NO disparan onError: Chromium no falla el
+  // <video>, solo omite en silencio lo que no sabe decodificar.
+  //   - Video (p.ej. HEVC 4K 10-bit en tablets): con metadata cargada, un stream
+  //     decodificable ya reporta dimensiones; si tras unos segundos sigue en 0x0,
+  //     jamás habrá frames.
+  //   - Audio (p.ej. AC3/DTS, muy común en rips "Dual-Lat" — Chromium en Android no
+  //     trae esos decodificadores por licencias, a diferencia de macOS): el video se
+  //     ve perfecto pero webkitAudioDecodedByteCount se queda clavado en 0 mientras
+  //     avanza el tiempo. 2 strikes de ~4s dan margen a que el decodificador arranque
+  //     sin dejar al usuario escuchando silencio de más.
   // Corre por intervalo (no timeupdate) para cubrir también el caso atascado en pausa.
   useEffect(() => {
-    blackScreenFiredRef.current = false
+    unsupportedFiredRef.current = false
+    silentAudioStrikesRef.current = 0
+    lastAudioCheckTimeRef.current = 0
+
     const timer = setInterval(() => {
-      const video = videoRef.current
-      if (!video || blackScreenFiredRef.current) return
+      const video = videoRef.current as VideoWithAudioByteCount | null
+      if (!video || unsupportedFiredRef.current) return
+
       if (video.readyState >= 1 && video.videoWidth === 0 && !video.error) {
-        blackScreenFiredRef.current = true
+        unsupportedFiredRef.current = true
+        clearInterval(timer)
+        handleErrorRef.current()
+        return
+      }
+
+      if (video.paused || video.videoWidth === 0) return
+      const audioBytes = video.webkitAudioDecodedByteCount
+      if (audioBytes === undefined) return // API no disponible en este WebView
+
+      const advancing = video.currentTime > lastAudioCheckTimeRef.current + 1
+      lastAudioCheckTimeRef.current = video.currentTime
+      silentAudioStrikesRef.current = advancing && audioBytes === 0 ? silentAudioStrikesRef.current + 1 : 0
+
+      if (silentAudioStrikesRef.current >= SILENT_AUDIO_STRIKES) {
+        unsupportedFiredRef.current = true
         clearInterval(timer)
         handleErrorRef.current()
       }
-    }, 4000)
+    }, UNSUPPORTED_CHECK_INTERVAL_MS)
     return () => clearInterval(timer)
   }, [itemId, effectiveRelPath])
 

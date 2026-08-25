@@ -141,7 +141,19 @@ tests/         módulos puros de core (corren sin Electron ni Android)
   Electron el IPC serializa y siempre llega objeto nuevo). La API móvil debe devolver
   snapshots (`{...getLibrary()}`, `[...getQueue()]`) en todo lo que el renderer compara
   por referencia. Síntoma: progreso/estados se actualizan pero la biblioteca queda en 0.
-- Un códec de video no soportado puede NO disparar `onError` del `<video>`: si solo la
-  pista de video es indecodificable (HEVC 4K 10-bit en la Redmi Pad SE), el audio avanza
-  con pantalla negra y 0 frames decodificados. El watchdog de VideoPlayer (currentTime>5
-  con videoWidth===0) lo trata como formato incompatible y cae al reproductor externo.
+- Un códec no soportado puede NO disparar `onError` del `<video>` en ninguna dirección:
+  - Video indecodificable (HEVC 4K 10-bit en la Redmi Pad SE): audio avanza con pantalla
+    negra y 0 frames decodificados.
+  - **Audio indecodificable (AC3/DTS — MUY común en rips "Dual-Lat", confirmado con
+    ffprobe: 4 pistas AC3 en "Los Simpson", ninguna AAC)**: Chromium en Android no trae
+    esos decodificadores por licencias (a diferencia de macOS, donde el sistema sí los
+    aporta) y simplemente omite la pista en silencio — el video se ve perfecto pero sin
+    sonido, sin ningún error. La señal confiable es `video.webkitAudioDecodedByteCount`
+    (no estándar, Chromium-only): con codec soportado sube con cada frame decodificado
+    (incluso en silencio digital real); con AC3/DTS se queda clavado en 0 para siempre
+    aunque el video avance. Distinguir "no hay audio" es imposible sin esto — `audioTracks`
+    no está expuesto en este WebView.
+  El watchdog de VideoPlayer (por intervalo, no timeupdate, para cubrir también el caso
+  atascado en pausa) cubre ambos: videoWidth===0 con metadata cargada, o 2 strikes de
+  ~4s con audio en 0 mientras currentTime avanza. Ambos caen al reproductor externo
+  igual que un onError real.
