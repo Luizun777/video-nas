@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+release/
+.DS_Store
+*.log
+
+# Contiene el token de TheMovieDB: NUNCA se sube al repo
+seed.config.json
+tsconfig.node.tsbuildinfo
+tsconfig.web.tsbuildinfo
+*.tsbuildinfo

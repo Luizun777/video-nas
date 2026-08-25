@@ -1,0 +1,23 @@
+appId: com.luizun.videonas
+productName: Video NAS
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+mac:
+  category: public.app-category.entertainment
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  darkModeSupport: true
+  # App local sin firmar: sin identidad de desarrollador no hay notarización.
+  identity: null
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
