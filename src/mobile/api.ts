@@ -153,8 +153,15 @@ export async function installMobileApi(): Promise<void> {
   setMediaSrcResolver((cacheRelPath) => `${cacheBase}/${cacheRelPath}`)
   enableTmdbDirectFallback()
 
-  const emitLibrary = (): void => emitter.emit('libraryChanged', getLibrary())
-  const broadcastQueue = (): void => emitter.emit('queue', getQueue())
+  // En Electron cada respuesta cruza IPC y llega como objeto NUEVO; aquí main y
+  // renderer comparten proceso y los stores mutan in place, así que sin estos
+  // snapshots zustand ve la misma referencia y React no re-renderiza jamás.
+  const snapshotLibrary = (): Library => ({ ...getLibrary() })
+  const snapshotConfig = (): AppConfig => ({ ...getConfig() })
+  const snapshotQueue = (): QueueEntry[] => [...getQueue()]
+
+  const emitLibrary = (): void => emitter.emit('libraryChanged', snapshotLibrary())
+  const broadcastQueue = (): void => emitter.emit('queue', snapshotQueue())
 
   onProgress((progress) => {
     emitter.emit('scanProgress', progress)
@@ -167,16 +174,16 @@ export async function installMobileApi(): Promise<void> {
   const api: IpcApi = {
     capabilities: ANDROID_CAPABILITIES,
 
-    getConfig: async () => getConfig(),
+    getConfig: async () => snapshotConfig(),
     saveConfig: async (patch) => {
       const next = saveConfig(patch)
       await configurePlugin(next)
       void refreshStatuses(false).then((statuses) => emitter.emit('serverStatuses', statuses))
-      return next
+      return { ...next }
     },
     testTmdbToken: (token) => testToken(token),
 
-    getLibrary: async () => getLibrary(),
+    getLibrary: async () => snapshotLibrary(),
     getServerStatuses: async () => getStatuses(),
     refreshServerStatuses: () => refreshStatuses(true),
 
@@ -325,21 +332,21 @@ export async function installMobileApi(): Promise<void> {
     },
     chooseExternalPlayer: async () => null,
 
-    getQueue: async () => getQueue(),
+    getQueue: async () => snapshotQueue(),
     addToQueue: async (itemId) => {
-      const entries = addToQueue(itemId)
+      addToQueue(itemId)
       broadcastQueue()
-      return entries
+      return snapshotQueue()
     },
     removeFromQueue: async (itemId) => {
-      const entries = removeFromQueue(itemId)
+      removeFromQueue(itemId)
       broadcastQueue()
-      return entries
+      return snapshotQueue()
     },
     clearQueue: async () => {
-      const entries = clearQueue()
+      clearQueue()
       broadcastQueue()
-      return entries
+      return snapshotQueue()
     },
     shiftQueue: async (skipItemId) => {
       const entry = shiftQueue(skipItemId)

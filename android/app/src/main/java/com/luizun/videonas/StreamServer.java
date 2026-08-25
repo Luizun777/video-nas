@@ -142,7 +142,8 @@ public class StreamServer extends NanoHTTPD {
             try {
                 fileSize = manager.fileSize(serverId, path);
             } catch (IOException e) {
-                return newFixedLengthResponse(Response.Status.BAD_GATEWAY, "text/plain", e.getMessage());
+                // NanoHTTPD 2.3.1 no tiene BAD_GATEWAY en su enum; 500 comunica igual.
+                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", e.getMessage());
             }
         }
 

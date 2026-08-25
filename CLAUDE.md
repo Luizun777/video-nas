@@ -136,3 +136,8 @@ tests/         módulos puros de core (corren sin Electron ni Android)
 - Los estados `:hover` del CSS van dentro de `@media (hover: hover)`: en táctil se
   quedan "pegados" tras cada tap. Los controles del player se revelan por tap (pointer
   coarse), no por mousemove.
+- En Android main y renderer comparten proceso: los stores de core mutan in place y
+  devolver esa referencia hace que zustand vea `===` y React NO re-renderice (en
+  Electron el IPC serializa y siempre llega objeto nuevo). La API móvil debe devolver
+  snapshots (`{...getLibrary()}`, `[...getQueue()]`) en todo lo que el renderer compara
+  por referencia. Síntoma: progreso/estados se actualizan pero la biblioteca queda en 0.
