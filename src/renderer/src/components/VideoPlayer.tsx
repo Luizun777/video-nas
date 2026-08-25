@@ -57,6 +57,8 @@ export function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSavedRef = useRef(0)
+  const resumeAtRef = useRef<number | null>(null)
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -109,6 +111,22 @@ export function VideoPlayer({
     else revealControls()
   }, [controlsVisible, revealControls])
 
+  // "Continuar viendo" (solo si la plataforma lo implementa — Android): se guarda la
+  // posición cada ~10s y al pausar/cerrar; el store decide cuándo cuenta como visto.
+  const saveProgress = useCallback(
+    (positionSec: number, durationSec: number) => {
+      if (!window.api.setPlaybackProgress || durationSec <= 0) return
+      void window.api.setPlaybackProgress({
+        key: `${itemId}::${effectiveRelPath}`,
+        itemId,
+        relPath: effectiveRelPath,
+        positionSec,
+        durationSec
+      })
+    },
+    [itemId, effectiveRelPath]
+  )
+
   // Cada vez que cambia lo que se reproduce (incluye avanzar de episodio/cola): estado limpio.
   useEffect(() => {
     setPlaying(false)
@@ -128,6 +146,22 @@ export function VideoPlayer({
       cancelled = true
     }
   }, [itemId, effectiveRelPath, revealControls])
+
+  // Posición guardada del título actual, para reanudar al cargar el metadata.
+  useEffect(() => {
+    lastSavedRef.current = 0
+    resumeAtRef.current = null
+    if (!window.api.getPlaybackProgress || (startAt && startAt > 0)) return
+    let cancelled = false
+    void window.api.getPlaybackProgress().then((entries) => {
+      if (cancelled) return
+      const entry = entries.find((e) => e.key === `${itemId}::${effectiveRelPath}`)
+      if (entry && !entry.finished) resumeAtRef.current = entry.positionSec
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [itemId, effectiveRelPath, startAt])
 
   // Reparto/relacionadas de películas: para la recomendación de secuela al terminar.
   useEffect(() => {
@@ -149,11 +183,13 @@ export function VideoPlayer({
   }, [item?.id, item?.tmdb?.id, item?.kind, item?.extraDetails])
 
   const handleClose = useCallback(() => {
+    const video = videoRef.current
+    if (video && video.duration) saveProgress(video.currentTime, video.duration)
     // No dejar una ventana PiP flotante huérfana ni la app atrapada en fullscreen.
     if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {})
     if (document.fullscreenElement) void document.exitFullscreen()
     onClose()
-  }, [onClose])
+  }, [onClose, saveProgress])
 
   /** Avanza a lo que decidió next-up: episodio directo, o saca de la cola en main (atómico). */
   const advance = useCallback(async () => {
@@ -301,6 +337,11 @@ export function VideoPlayer({
     if (!video) return
     setCurrentTime(video.currentTime)
 
+    if (Math.abs(video.currentTime - lastSavedRef.current) >= 10) {
+      lastSavedRef.current = video.currentTime
+      saveProgress(video.currentTime, video.duration || 0)
+    }
+
     if (countdownActive && nextUpState === 'hidden' && video.currentTime >= nextUpTrigger) {
       setCountdown(NEXT_UP_COUNTDOWN_SECONDS)
       setNextUpState('countdown')
@@ -308,6 +349,8 @@ export function VideoPlayer({
   }
 
   const handleEnded = (): void => {
+    const video = videoRef.current
+    if (video?.duration) saveProgress(video.duration, video.duration)
     if (countdownActive && nextUpState !== 'cancelled') void advance()
   }
 
@@ -377,12 +420,23 @@ export function VideoPlayer({
         autoPlay
         onClick={isCoarsePointer ? handleVideoTap : togglePlay}
         onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
+        onPause={() => {
+          setPlaying(false)
+          const video = videoRef.current
+          if (video && video.duration) saveProgress(video.currentTime, video.duration)
+        }}
         onLoadedMetadata={(e) => {
           setDuration(e.currentTarget.duration)
           // Separar/volver conservan la posición; los wrappers no pasan startAt en auto-avance.
           if (startAt && startAt > 0 && startAt < e.currentTarget.duration) {
             e.currentTarget.currentTime = startAt
+          } else if (
+            resumeAtRef.current &&
+            resumeAtRef.current > 0 &&
+            resumeAtRef.current < e.currentTarget.duration - 10
+          ) {
+            // Continuar viendo (Android): reanudar donde quedó.
+            e.currentTarget.currentTime = resumeAtRef.current
           }
         }}
         onTimeUpdate={handleTimeUpdate}

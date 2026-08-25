@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { LibraryItem } from '@shared/types'
 import { GENRE_NAMES } from '@shared/genres'
@@ -69,9 +69,30 @@ export function HomeView(): React.JSX.Element {
   const progress = useAppStore((s) => s.progress)
   const downloads = useAppStore((s) => s.downloads)
   const queue = useAppStore((s) => s.queue)
+  const playingTarget = useAppStore((s) => s.playingTarget)
   const navigate = useNavigate()
 
   const items = useMemo(() => visibleItems(library), [library])
+
+  // "Continuar viendo": solo existe si la plataforma guarda progreso (Android). En
+  // desktop el método no está y la fila queda vacía → Row no renderiza nada.
+  const [resumeItems, setResumeItems] = useState<LibraryItem[]>([])
+  useEffect(() => {
+    if (!window.api.getPlaybackProgress || playingTarget) return
+    let cancelled = false
+    void window.api.getPlaybackProgress().then((entries) => {
+      if (cancelled) return
+      const ordered = entries
+        .filter((entry) => !entry.finished)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map((entry) => library.items[entry.itemId])
+        .filter((item): item is LibraryItem => Boolean(item && !item.missing))
+      setResumeItems([...new Map(ordered.map((item) => [item.id, item])).values()].slice(0, 15))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [library, playingTarget])
 
   const { hero, recent, movies, series, unidentified, genreRows, downloaded } = useMemo(() => {
     const movies = sortByTitle(items.filter((item) => item.kind === 'movie'))
@@ -132,6 +153,7 @@ export function HomeView(): React.JSX.Element {
   return (
     <div>
       {hero && <Hero item={hero} />}
+      <Row title="Continuar viendo" items={resumeItems} />
       <Row title="Tu cola" items={queuedItems(library, queue)} />
       <Row title="Descargadas" items={downloaded} />
       <Row title="Agregadas recientemente" items={recent} />
