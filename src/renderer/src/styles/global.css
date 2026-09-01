@@ -1693,20 +1693,67 @@ body.mobile-shell .scan-bar {
 @media (max-width: 600px) {
   :root {
     --nav-height: 56px;
+    --mini-bar-h: 62px;
   }
 
-  .nav {
-    gap: 8px;
-    overflow-x: auto;
+  /* Teléfono en vertical: los 5 enlaces + buscador + Ajustes miden el doble del ancho
+     disponible. Se reparten en dos filas — arriba marca, buscador y Ajustes; abajo las
+     secciones, deslizables — en vez de dejarlos cortados fuera de pantalla. */
+  .nav,
+  body.mobile-shell .nav {
+    height: auto;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    row-gap: 8px;
+    padding: 8px 12px;
+    overflow-x: visible;
   }
 
-  .nav-links {
+  body.mobile-shell .nav {
+    padding-top: calc(8px + env(safe-area-inset-top));
+  }
+
+  .nav-brand {
+    order: 1;
+    font-size: 13px;
+  }
+
+  /* flex-basis 0 + min-width 0: sin esto el input se planta en su ancho intrínseco
+     (~20 caracteres) y empuja "Ajustes" a una tercera fila. */
+  .nav-search {
+    order: 2;
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+
+  /* Ajustes: es el único .nav-link que cuelga directo de la barra. */
+  .nav > .nav-link {
+    order: 3;
     flex: 0 0 auto;
   }
 
-  .nav-search {
-    width: 130px;
-    flex: 0 0 130px;
+  .nav-links {
+    order: 4;
+    flex: 1 0 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-link {
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  /* El recuento de títulos es informativo: en un teléfono el espacio vale más. */
+  .nav-count {
+    display: none;
   }
 
   .hero {
@@ -1808,5 +1855,39 @@ body.mobile-shell .scan-bar {
 
   .player-title {
     font-size: 16px;
+  }
+
+  /* Mini-barra: la miniatura de 118px se come un tercio de la pantalla. */
+  .player-overlay--mini .player-video {
+    width: 76px;
+    flex: 0 0 76px;
+  }
+
+  .mini-player-info {
+    gap: 10px;
+  }
+
+  .mini-player-title {
+    font-size: 13px;
+  }
+
+  .mini-player-subtitle {
+    font-size: 11px;
+  }
+
+  /* La caja de vista previa no cabe entera: se encoge y se mantiene dentro. */
+  .player-preview-img {
+    width: 148px;
+    height: 83px;
+  }
+
+  /* Objetivos táctiles: los botones pequeños se quedaban en 28px de alto. */
+  .btn-sm {
+    min-height: 40px;
+  }
+
+  .toolbar .btn,
+  .episode .btn {
+    min-height: 42px;
   }
 }

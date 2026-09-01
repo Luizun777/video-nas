@@ -52,6 +52,7 @@ public class VlcPlayerPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         if (manager != null) manager.close();
+        setLandscape(false);
     }
 
     @PluginMethod
@@ -153,13 +154,36 @@ public class VlcPlayerPlugin extends Plugin {
     public void setVideoLayout(PluginCall call) {
         String mode = call.getString("mode", "fullscreen");
         ensureManager().setLayoutMode(mode);
+        // El video es apaisado: a pantalla completa se fuerza horizontal, y al
+        // minimizar se devuelve el control al sensor para navegar el catálogo.
+        setLandscape(!"hidden".equals(mode));
         call.resolve();
+    }
+
+    @PluginMethod
+    public void setOrientation(PluginCall call) {
+        setLandscape("landscape".equals(call.getString("mode", "auto")));
+        call.resolve();
+    }
+
+    /**
+     * SENSOR_LANDSCAPE (no LANDSCAPE a secas) para que el usuario pueda girar entre las
+     * dos orientaciones horizontales. El manifest declara configChanges de orientación,
+     * así que la Activity NO se recrea y la reproducción no se corta.
+     */
+    private void setLandscape(boolean landscape) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> getActivity().setRequestedOrientation(
+            landscape
+                ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED));
     }
 
     @PluginMethod
     public void close(PluginCall call) {
         if (manager != null) manager.close();
         setKeepScreenOn(false);
+        setLandscape(false); // el catálogo vuelve a girar libremente
         call.resolve();
     }
 }

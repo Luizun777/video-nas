@@ -49,6 +49,8 @@ export class VlcNativeEngine implements PlaybackEngine {
     this.state = { currentTime: target.startAt ?? 0, duration: 0, playing: false }
     this.tracks = { audio: [], subtitles: [] }
     this.applyBodyClass()
+    // El video es apaisado: al abrirlo a pantalla completa se gira el teléfono.
+    if (this.viewMode === 'full') void VlcPlayer.setOrientation({ mode: 'landscape' })
     void VlcPlayer.open({
       url: videoStreamUrl(target.itemId, target.relPath),
       startAtMs: Math.round((target.startAt ?? 0) * 1000)
@@ -136,7 +138,7 @@ export class VlcNativeEngine implements PlaybackEngine {
     this.destroyed = true
     if (this.tracksTimer) clearTimeout(this.tracksTimer)
     document.body.classList.remove('native-video-full')
-    void VlcPlayer.close()
+    void VlcPlayer.close() // close() ya libera la orientación
     void this.pluginListener.then((handle) => handle.remove())
     this.listeners.clear()
     this.errorListeners.clear()

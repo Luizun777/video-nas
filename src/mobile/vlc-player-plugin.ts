@@ -39,8 +39,11 @@ export interface VlcPlayerPluginApi {
   /** .srt/.ass externo servido por el puente HTTP; select lo activa de inmediato. */
   addSubtitleSlave(options: { url: string; select?: boolean }): Promise<void>
 
-  /** 'fullscreen' = video a pantalla; 'hidden' = solo audio (mini-barra). */
+  /** 'fullscreen' = video a pantalla; 'hidden' = solo audio (mini-barra). Además fuerza
+   *  (o libera) la orientación horizontal, porque el video es apaisado. */
   setVideoLayout(options: { mode: 'fullscreen' | 'hidden' }): Promise<void>
+  /** Bloquea la pantalla en horizontal mientras se ve video; 'auto' la libera. */
+  setOrientation(options: { mode: 'landscape' | 'auto' }): Promise<void>
 
   close(): Promise<void>
 
