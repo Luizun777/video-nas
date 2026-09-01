@@ -15,6 +15,11 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
+        // libVLC trae 4 ABIs (~80 MB); la tablet real es arm64. Para probar en un
+        // emulador x86_64 hay que quitar este filtro temporalmente.
+        ndk {
+            abiFilters "arm64-v8a"
+        }
     }
     buildTypes {
         release {
@@ -32,6 +37,10 @@ repositories {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // Reproductor universal embebido: decodifica lo que el WebView no (AC3/DTS,
+    // HEVC 10-bit, DivX, MPEG-2) y renderiza subtítulos ASS/PGS nativos.
+    // 3.6.x a propósito: 3.7+ exige compileSdk 36 y el proyecto (AGP 8.7) tope es 35.
+    implementation "org.videolan.android:libvlc-all:3.6.5"
     // Cliente SMB2/3 puro Java + servidor HTTP del puente de streaming.
     implementation "com.hierynomus:smbj:0.13.0"
     implementation "org.nanohttpd:nanohttpd:2.3.1"

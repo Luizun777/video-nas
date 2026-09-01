@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // Antes de super.onCreate, como pide Capacitor para plugins propios.
         registerPlugin(NasPlugin.class);
+        registerPlugin(VlcPlayerPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
