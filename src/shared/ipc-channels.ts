@@ -41,7 +41,11 @@ export const IPC = {
   startDownload: 'downloads:start',
   cancelDownload: 'downloads:cancel',
   deleteDownload: 'downloads:delete',
-  getDownloads: 'downloads:get'
+  getDownloads: 'downloads:get',
+
+  getPlaybackProgress: 'progress:get',
+  setPlaybackProgress: 'progress:set',
+  clearPlaybackProgress: 'progress:clear'
 } as const
 
 export const EVENTS = {

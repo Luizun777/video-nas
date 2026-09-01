@@ -11,6 +11,7 @@ import type {
   LibraryItem,
   MediaKind,
   MetadataOverride,
+  PlaybackProgressEntry,
   PlayResult,
   PlayTarget,
   QueueEntry,
@@ -25,6 +26,7 @@ import {
   flushOverrides,
   setOverride
 } from '@core/stores/overrides-store'
+import { clearProgress, getAllProgress, setProgress } from '@core/stores/progress-store'
 import { discoverSmbServers } from './nas/discovery'
 import { resolveAbsolutePath } from './playback/resolve'
 import { readChapterMarks } from './playback/mkv-chapter-reader'
@@ -343,6 +345,14 @@ export function registerIpc(): void {
     deleteDownload(itemId, relPath)
   )
   ipcMain.handle(IPC.getDownloads, (): DownloadEntry[] => getDownloads())
+
+  // ---- Progreso de reproducción ("continuar viendo") -----------------------
+  ipcMain.handle(IPC.getPlaybackProgress, (): PlaybackProgressEntry[] => getAllProgress())
+  ipcMain.handle(
+    IPC.setPlaybackProgress,
+    (_e, entry: Omit<PlaybackProgressEntry, 'updatedAt' | 'finished'>): void => setProgress(entry)
+  )
+  ipcMain.handle(IPC.clearPlaybackProgress, (_e, key: string): void => clearProgress(key))
 
   // ---- Eventos hacia el renderer ------------------------------------------
   onProgress((progress) => broadcast(EVENTS.scanProgress, progress))

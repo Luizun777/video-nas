@@ -8,6 +8,7 @@ import { createMainWindow } from './main-window'
 import { initConfigStore } from '@core/stores/config-store'
 import { initLibraryStore } from '@core/stores/library-store'
 import { initOverridesStore } from '@core/stores/overrides-store'
+import { initProgressStore, flushProgress } from '@core/stores/progress-store'
 import { initQueueStore } from '@core/stores/queue-store'
 import { nodeStoreIO } from './adapters/node-store-io'
 import { loadSeedToken } from './adapters/node-seed'
@@ -74,7 +75,8 @@ void app.whenReady().then(async () => {
     }),
     initLibraryStore(nodeStoreIO),
     initOverridesStore(nodeStoreIO),
-    initQueueStore(nodeStoreIO)
+    initQueueStore(nodeStoreIO),
+    initProgressStore(nodeStoreIO)
   ])
   await Promise.all([ensureCacheDirs(), initDownloadManager(nodeStoreIO, nodeDownloadTransfer)])
 
@@ -94,4 +96,10 @@ void app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// El JsonStore escribe con debounce: sin este flush, el último save de progreso
+// (el que guarda dónde te quedaste al cerrar) se puede perder.
+app.on('before-quit', () => {
+  void flushProgress()
 })

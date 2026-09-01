@@ -7,6 +7,7 @@ import type {
   DownloadEntry,
   ExternalPlayerInfo,
   IpcApi,
+  PlaybackProgressEntry,
   PlayTarget,
   QueueEntry,
   Library,
@@ -104,6 +105,13 @@ const api: IpcApi = {
   deleteDownload: (itemId: string, relPath: string) =>
     ipcRenderer.invoke(IPC.deleteDownload, itemId, relPath) as Promise<void>,
   getDownloads: () => ipcRenderer.invoke(IPC.getDownloads) as Promise<DownloadEntry[]>,
+
+  getPlaybackProgress: () =>
+    ipcRenderer.invoke(IPC.getPlaybackProgress) as Promise<PlaybackProgressEntry[]>,
+  setPlaybackProgress: (entry) =>
+    ipcRenderer.invoke(IPC.setPlaybackProgress, entry) as Promise<void>,
+  clearPlaybackProgress: (key: string) =>
+    ipcRenderer.invoke(IPC.clearPlaybackProgress, key) as Promise<void>,
 
   onScanProgress: (cb) => subscribe<ScanProgress>(EVENTS.scanProgress, cb),
   onLibraryChanged: (cb) => subscribe<Library>(EVENTS.libraryChanged, cb),
