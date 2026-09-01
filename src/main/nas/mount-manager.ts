@@ -20,7 +20,7 @@ export interface SmbMount {
 
 /**
  * Parsea la salida de `mount` buscando montajes smbfs.
- * Formato macOS: `//usuario@192.168.0.189/video on /Volumes/video (smbfs, ...)`
+ * Formato macOS: `//usuario@192.168.1.100/video on /Volumes/video (smbfs, ...)`
  */
 export function parseSmbMounts(mountOutput: string): SmbMount[] {
   const mounts: SmbMount[] = []

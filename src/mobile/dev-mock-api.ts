@@ -153,9 +153,9 @@ export function installMockApi(): void {
       {
         id: SERVER_ID,
         name: 'NAS principal',
-        host: '192.168.0.189',
+        host: '192.168.1.100',
         share: 'video',
-        username: 'luizun',
+        username: 'usuario',
         password: '',
         folders: [
           { path: 'Movies', kind: 'movie' },

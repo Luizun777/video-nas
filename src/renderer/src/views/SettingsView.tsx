@@ -93,7 +93,7 @@ function ServerEditor({
           <input
             value={server.host}
             onChange={(e) => onChange({ ...server, host: e.target.value.trim() })}
-            placeholder="192.168.0.189"
+            placeholder="192.168.1.100"
           />
         </div>
         <div style={{ flex: 0.8 }}>

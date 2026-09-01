@@ -29,7 +29,7 @@ describe('initConfigStore', () => {
     expect(config.language).toBe('es-MX')
     expect(config.downloadsPath).toBe('/tmp/descargas')
     expect(config.servers).toHaveLength(1)
-    expect(config.servers[0].host).toBe('192.168.0.189')
+    expect(config.servers[0].host).toBe('192.168.1.100')
     expect(config.servers[0].share).toBe('video')
   })
 

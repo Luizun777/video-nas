@@ -3,10 +3,15 @@ import type { StoreIO } from '../io'
 import { deepClone, newId } from '../util'
 import { JsonStore } from './json-store'
 
+/**
+ * Servidor de ejemplo del primer arranque: deja los campos con la forma correcta para
+ * que el usuario solo cambie la dirección en Ajustes. La IP es un ejemplo, no una red
+ * real.
+ */
 const DEFAULT_SERVER: ServerConfig = {
   id: 'srv_default',
   name: 'NAS principal',
-  host: '192.168.0.189',
+  host: '192.168.1.100',
   share: 'video',
   folders: [
     { path: 'Movies', kind: 'movie' },
