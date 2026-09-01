@@ -16,6 +16,8 @@ const NEXT_UP_THRESHOLD_SECONDS = 30
 const NEXT_UP_COUNTDOWN_SECONDS = 15
 const CONTROLS_HIDE_DELAY_MS = 3000
 const SEEK_STEP_SECONDS = 10
+/** Los fotogramas de vista previa se piden redondeados a este múltiplo, y se cachean. */
+const PREVIEW_BUCKET_SECONDS = 10
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
@@ -64,6 +66,7 @@ export function VideoPlayer({
   const library = useAppStore((s) => s.library)
   const config = useAppStore((s) => s.config)
   const queue = useAppStore((s) => s.queue)
+  const shuffleItemId = useAppStore((s) => s.shuffleItemId)
   const navigate = useNavigate()
 
   // El motor vive lo que vive el componente; cambiar de target es engine.load(), no
@@ -75,6 +78,9 @@ export function VideoPlayer({
   const handleErrorRef = useRef<(reason: EngineError['reason']) => void>(() => {})
   const handleTimeUpdateRef = useRef<() => void>(() => {})
   const handleEndedRef = useRef<() => void>(() => {})
+  const scrubbingRef = useRef(false)
+  const previewCacheRef = useRef(new Map<number, string | null>())
+  const previewSeqRef = useRef(0)
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -88,6 +94,9 @@ export function VideoPlayer({
   const [nextUpState, setNextUpState] = useState<'hidden' | 'countdown' | 'cancelled'>('hidden')
   const [countdown, setCountdown] = useState(NEXT_UP_COUNTDOWN_SECONDS)
   const [extra, setExtra] = useState<ExtraDetails | null>(null)
+  const [preview, setPreview] = useState<{ leftPx: number; seconds: number; url: string | null } | null>(
+    null
+  )
 
   const item = library.items[itemId]
   const effectiveRelPath =
@@ -97,10 +106,14 @@ export function VideoPlayer({
   const ownedIndex = useMemo(() => tmdbIndex(library), [library])
 
   // Qué sigue al terminar: episodio > cola > nada. Puro y testeado en shared/next-up.ts.
+  // En modo aleatorio el "siguiente episodio" se sortea. Se recalcula con currentTime
+  // congelado a propósito: la decisión no debe cambiar de episodio en cada tick.
   const decision = useMemo(() => {
     if (!item) return { kind: 'none' as const }
-    return decideNextUp(item, effectiveRelPath, queuedItems(library, queue))
-  }, [item, effectiveRelPath, library, queue])
+    return decideNextUp(item, effectiveRelPath, queuedItems(library, queue), {
+      shuffle: shuffleItemId === item.id
+    })
+  }, [item, effectiveRelPath, library, queue, shuffleItemId])
 
   const introEnd = chapterMarks.introEndSeconds ?? (isSeries ? item?.introMark?.seconds : undefined)
   const autoSkipEnabled = config?.autoSkipIntro !== false
@@ -168,6 +181,8 @@ export function VideoPlayer({
   useEffect(() => {
     let cancelled = false
     lastSavedRef.current = 0
+    previewCacheRef.current.clear() // las miniatura son de OTRO archivo
+    setPreview(null)
     const doLoad = async (): Promise<void> => {
       let at = startAt && startAt > 0 ? startAt : undefined
       if (at === undefined && window.api.getPlaybackProgress) {
@@ -438,12 +453,65 @@ export function VideoPlayer({
   }
   handleErrorRef.current = handleError
 
-  const handleSeekClick = (event: React.MouseEvent<HTMLDivElement>): void => {
-    const state = engine.getState()
-    if (!state.duration) return
-    const rect = event.currentTarget.getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
-    engine.seekTo(ratio * state.duration)
+  /** Segundos del punto de la barra donde está el puntero. */
+  const secondsAt = (clientX: number, bar: HTMLElement): number | null => {
+    const duration = engine.getState().duration
+    if (!duration) return null
+    const rect = bar.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    return ratio * duration
+  }
+
+  /**
+   * Miniatura del punto señalado. Se pide por buckets (y se cachean) porque cada
+   * fotograma cuesta un ffmpeg en escritorio y una lectura del NAS en Android:
+   * arrastrar sin esto dispararía cientos de peticiones.
+   */
+  const updatePreview = (clientX: number, bar: HTMLElement): void => {
+    const seconds = secondsAt(clientX, bar)
+    if (seconds === null) return
+    const rect = bar.getBoundingClientRect()
+    const leftPx = Math.max(0, Math.min(rect.width, clientX - rect.left))
+    const bucket = Math.max(0, Math.round(seconds / PREVIEW_BUCKET_SECONDS) * PREVIEW_BUCKET_SECONDS)
+    const cached = previewCacheRef.current.get(bucket)
+    setPreview({ leftPx, seconds, url: cached ?? null })
+
+    if (cached !== undefined || !window.api.getPreviewFrame) return
+    const seq = ++previewSeqRef.current
+    void window.api
+      .getPreviewFrame(itemId, effectiveRelPath, bucket)
+      .then((url) => {
+        previewCacheRef.current.set(bucket, url)
+        if (seq === previewSeqRef.current) {
+          setPreview((current) => (current ? { ...current, url } : current))
+        }
+      })
+      .catch(() => {})
+  }
+
+  const handleScrubStart = (event: React.PointerEvent<HTMLDivElement>): void => {
+    // La captura mantiene el arrastre aunque el dedo se salga de la barra.
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Puntero ya liberado (o evento sintético): el arrastre sigue funcionando.
+    }
+    scrubbingRef.current = true
+    updatePreview(event.clientX, event.currentTarget)
+  }
+
+  const handleScrubMove = (event: React.PointerEvent<HTMLDivElement>): void => {
+    // Con ratón se previsualiza al pasar por encima; en táctil solo al arrastrar.
+    if (!scrubbingRef.current && event.pointerType === 'touch') return
+    updatePreview(event.clientX, event.currentTarget)
+  }
+
+  const handleScrubEnd = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (!scrubbingRef.current) return
+    scrubbingRef.current = false
+    const seconds = secondsAt(event.clientX, event.currentTarget)
+    if (seconds !== null) engine.seekTo(seconds)
+    setPreview(null)
   }
 
   const handleSkipIntro = (): void => {
@@ -499,7 +567,9 @@ export function VideoPlayer({
 
       {!isMini && nextUpState === 'countdown' && decision.kind === 'episode' && (
         <div className="player-next-up">
-          <div className="player-next-up-title">Siguiente episodio en {countdown}s</div>
+          <div className="player-next-up-title">
+            {shuffleItemId === item.id ? 'Otro episodio al azar' : 'Siguiente episodio'} en {countdown}s
+          </div>
           <div className="player-next-up-sub">
             T{decision.episode.season} · E{decision.episode.episode}
           </div>
@@ -638,8 +708,31 @@ export function VideoPlayer({
         </div>
 
         <div className="player-bottom">
-          <div className="player-progress" onClick={handleSeekClick}>
-            <div className="player-progress-fill" style={{ width: `${progressPercent}%` }} />
+          <div className="player-progress-wrap">
+            {preview && (
+              <div className="player-preview" style={{ left: `${preview.leftPx}px` }}>
+                {preview.url ? (
+                  <img className="player-preview-img" src={preview.url} alt="" />
+                ) : (
+                  <div className="player-preview-img player-preview-empty" />
+                )}
+                <div className="player-preview-time">{formatTime(preview.seconds)}</div>
+              </div>
+            )}
+            <div
+              className="player-progress"
+              onPointerDown={handleScrubStart}
+              onPointerMove={handleScrubMove}
+              onPointerUp={handleScrubEnd}
+              onPointerCancel={handleScrubEnd}
+              onPointerLeave={() => {
+                if (!scrubbingRef.current) setPreview(null)
+              }}
+            >
+              <div className="player-progress-fill" style={{ width: `${progressPercent}%` }}>
+                <span className="player-progress-knob" />
+              </div>
+            </div>
           </div>
 
           <div className="player-buttons">

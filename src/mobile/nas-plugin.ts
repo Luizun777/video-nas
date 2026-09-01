@@ -39,6 +39,9 @@ export interface NasPluginApi {
 
   statFile(options: { serverId: string; path: string }): Promise<{ exists: boolean; dir: boolean; size: number }>
 
+  /** Fotograma JPEG en base64 para la vista previa; data ausente = no se pudo extraer. */
+  previewFrame(options: { url: string; timeMs: number }): Promise<{ data?: string }>
+
   /** Archivo PEQUEÑO del share en base64 (metadata compartida); data ausente = no existe. */
   readNasFile(options: { serverId: string; path: string }): Promise<{ data?: string }>
   /** Escritura atómica en el share (tmp + rename, crea carpetas). data en base64. */

@@ -49,6 +49,7 @@ export const IPC = {
 
   listSubtitleFiles: 'playback:subtitle-files',
   getSubtitleVtt: 'playback:subtitle-vtt',
+  getPreviewFrame: 'playback:preview-frame',
   probeMedia: 'playback:probe',
   startTranscode: 'transcode:start',
   stopTranscode: 'transcode:stop'

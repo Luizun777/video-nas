@@ -484,6 +484,8 @@ export interface IpcApi {
     relPath: string | undefined,
     source: { stream: number } | { ext: string }
   ): Promise<string | null>
+  /** Fotograma (data URL) para la vista previa de la barra de progreso. */
+  getPreviewFrame?(itemId: string, relPath: string | undefined, seconds: number): Promise<string | null>
   /** Solo desktop: ffprobe + decisión directo/transcode. Android usa libVLC y no lo trae. */
   probeMedia?(itemId: string, relPath?: string): Promise<{ probe: MediaProbe; plan: PlaybackPlan } | null>
   startTranscode?(options: {

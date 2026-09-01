@@ -71,7 +71,13 @@ import { capacitorStoreIO } from './adapters/capacitor-store-io'
 import { createSmbFs } from './adapters/smb-fs-adapter'
 import { capacitorImageCache, imageCacheBaseUrl } from './adapters/capacitor-image-cache'
 import { capacitorDownloadTransfer } from './adapters/capacitor-download-transfer'
-import { bridgeFileUrl, chapterMarksFor, initBridge, playExternalTarget } from './playback'
+import {
+  bridgeFileUrl,
+  chapterMarksFor,
+  initBridge,
+  playExternalTarget,
+  resolveStreamUrl
+} from './playback'
 import { pickTargetRelPath } from '@core/playback/resolve-target'
 import { findSubtitleCandidates } from '@core/playback/subtitle-candidates'
 import { registerEngineFactory } from '@/player/engine-registry'
@@ -282,6 +288,17 @@ export async function installMobileApi(): Promise<void> {
     revealInFinder: async () => ({ ok: false, error: 'No disponible en Android.' }),
 
     getChapterMarks: (itemId, relPath) => chapterMarksFor(itemId, relPath),
+
+    getPreviewFrame: async (itemId, relPath, seconds) => {
+      const url = resolveStreamUrl(itemId, relPath)
+      if (url === 'about:blank') return null
+      try {
+        const { data } = await Nas.previewFrame({ url, timeMs: seconds * 1000 })
+        return data ? `data:image/jpeg;base64,${data}` : null
+      } catch {
+        return null
+      }
+    },
 
     // Subtítulos externos junto al video (o en Subs/): se listan al reproducir, con
     // URLs del puente para que libVLC los cargue como slaves.

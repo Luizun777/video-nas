@@ -34,7 +34,7 @@ import { discoverSmbServers } from './nas/discovery'
 import { resolveAbsolutePath } from './playback/resolve'
 import { readChapterMarks } from './playback/mkv-chapter-reader'
 import { listExternalPlayers } from './playback/external-players'
-import { probeMedia } from './playback/ffmpeg'
+import { previewFrame, probeMedia } from './playback/ffmpeg'
 import { startTranscodeSession, stopTranscodeSession } from './playback/transcode-session'
 import { decidePlaybackPlan } from '@core/playback/media-probe'
 import { findSubtitleCandidates } from '@core/playback/subtitle-candidates'
@@ -393,6 +393,15 @@ export function registerIpc(): void {
       const subPath = normalize(join(videoDir, source.ext))
       if (!subPath.startsWith(videoDir)) return null
       return convertSubtitleFile(subPath)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.getPreviewFrame,
+    async (_e, itemId: string, relPath: string | undefined, seconds: number): Promise<string | null> => {
+      const resolved = await resolveAbsolutePath(itemId, relPath)
+      if ('error' in resolved) return null
+      return previewFrame(resolved.absPath, seconds)
     }
   )
 

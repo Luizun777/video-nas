@@ -45,6 +45,8 @@ public class NasPlugin extends Plugin {
     /** Debe coincidir con DOWNLOAD_CANCELLED de core (download-manager.ts). */
     private static final String CANCELLED = "CANCELLED";
     private static final int DOWNLOAD_CHUNK = 1024 * 1024;
+    /** Ancho de las miniaturas de la barra de progreso. */
+    private static final int PREVIEW_WIDTH = 320;
     private static final long PROGRESS_THROTTLE_MS = 500;
 
     private final SmbClientManager manager = new SmbClientManager();
@@ -211,6 +213,46 @@ public class NasPlugin extends Plugin {
                 call.resolve(new JSObject().put("ok", true));
             } catch (IOException | IllegalArgumentException e) {
                 call.reject(e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Fotograma para la vista previa de la barra de progreso. Va por
+     * MediaMetadataRetriever contra la URL del puente (no por libVLC, que está ocupado
+     * reproduciendo). Si el formato no le gusta, devuelve vacío y la UI no muestra
+     * miniatura: nunca es un error que corte nada.
+     */
+    @PluginMethod
+    public void previewFrame(PluginCall call) {
+        String url = call.getString("url");
+        double timeMs = call.getDouble("timeMs", 0.0);
+        if (url == null || url.isEmpty()) {
+            call.resolve(new JSObject());
+            return;
+        }
+        ioPool.execute(() -> {
+            android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+            try {
+                retriever.setDataSource(url, new java.util.HashMap<>());
+                android.graphics.Bitmap frame = retriever.getFrameAtTime(
+                    (long) (timeMs * 1000),
+                    android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                if (frame == null) {
+                    call.resolve(new JSObject());
+                    return;
+                }
+                int width = PREVIEW_WIDTH;
+                int height = Math.max(1, frame.getHeight() * width / Math.max(1, frame.getWidth()));
+                android.graphics.Bitmap scaled = android.graphics.Bitmap.createScaledBitmap(frame, width, height, true);
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out);
+                call.resolve(new JSObject()
+                    .put("data", android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)));
+            } catch (Exception e) {
+                call.resolve(new JSObject());
+            } finally {
+                try { retriever.release(); } catch (Exception ignored) { }
             }
         });
     }

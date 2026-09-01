@@ -151,6 +151,7 @@ export function DetailView(): React.JSX.Element {
   const play = useAppStore((s) => s.play)
   const playSmart = useAppStore((s) => s.playSmart)
   const playExternal = useAppStore((s) => s.playExternal)
+  const playRandomEpisode = useAppStore((s) => s.playRandomEpisode)
   const openEditor = useAppStore((s) => s.openEditor)
   const pushToast = useAppStore((s) => s.pushToast)
   const statuses = useAppStore((s) => s.statuses)
@@ -293,6 +294,15 @@ export function DetailView(): React.JSX.Element {
           )}
           {item.versions && item.versions.length >= 2 && (
             <span className="settings-hint">Elige una versión para descargarla.</span>
+          )}
+          {item.kind === 'tv' && (item.episodes?.length ?? 0) > 1 && (
+            <button
+              className="btn btn-primary"
+              onClick={() => playRandomEpisode(item.id)}
+              title="Reproduce un episodio al azar; al terminar, sale otro al azar"
+            >
+              🔀 Aleatorio
+            </button>
           )}
           <button
             className="btn"

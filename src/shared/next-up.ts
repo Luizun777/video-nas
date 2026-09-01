@@ -15,8 +15,32 @@ export function findNextEpisode(item: LibraryItem, currentRelPath: string): Epis
 }
 
 /**
+ * Un episodio al azar de la serie, distinto del que se está viendo. `random` se inyecta
+ * para poder testearlo; por defecto Math.random.
+ */
+export function pickRandomEpisode(
+  item: LibraryItem,
+  currentRelPath: string,
+  random: () => number = Math.random
+): EpisodeEntry | null {
+  const episodes = sortedEpisodes(item)
+  if (episodes.length === 0) return null
+  const candidates = episodes.filter((e) => e.relPath !== currentRelPath)
+  // Con un solo episodio se repite el mismo antes que cortar la reproducción.
+  const pool = candidates.length > 0 ? candidates : episodes
+  return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))]
+}
+
+export interface NextUpOptions {
+  /** Modo aleatorio de la serie: el "siguiente" es un episodio al azar. */
+  shuffle?: boolean
+  random?: () => number
+}
+
+/**
  * Prioridad al terminar: episodio siguiente de la serie > primer título de la cola > nada
- * (con 'none', la UI muestra la recomendación de secuela si la hay).
+ * (con 'none', la UI muestra la recomendación de secuela si la hay). En modo aleatorio,
+ * el episodio siguiente se sortea en vez de ir en orden.
  *
  * `queuedItems` llega EN ORDEN y ya resuelto contra la biblioteca (sin ids muertos ni
  * items missing) — ese filtrado es responsabilidad del llamador. Cualquier entrada igual
@@ -25,10 +49,13 @@ export function findNextEpisode(item: LibraryItem, currentRelPath: string): Epis
 export function decideNextUp(
   current: LibraryItem,
   currentRelPath: string,
-  queuedItems: LibraryItem[]
+  queuedItems: LibraryItem[],
+  options: NextUpOptions = {}
 ): NextUpDecision {
   if (current.kind === 'tv') {
-    const episode = findNextEpisode(current, currentRelPath)
+    const episode = options.shuffle
+      ? pickRandomEpisode(current, currentRelPath, options.random)
+      : findNextEpisode(current, currentRelPath)
     if (episode) return { kind: 'episode', episode }
   }
 

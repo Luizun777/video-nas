@@ -25,6 +25,34 @@ export function ffprobeBinary(): string {
   return unpacked(ffprobeInstaller.path)
 }
 
+/**
+ * Un fotograma en el segundo pedido, como data URL, para la vista previa de la barra.
+ * `-ss` ANTES de `-i` para que ffmpeg salte por keyframes (instantáneo aunque el
+ * archivo tenga varios GB) y una sola imagen pequeña para que quepa en el IPC.
+ */
+export async function previewFrame(absPath: string, seconds: number): Promise<string | null> {
+  try {
+    const { stdout } = await exec(
+      ffmpegBinary(),
+      [
+        '-v', 'error',
+        '-ss', String(Math.max(0, Math.floor(seconds))),
+        '-i', absPath,
+        '-frames:v', '1',
+        '-vf', 'scale=320:-2',
+        '-f', 'mjpeg',
+        'pipe:1'
+      ],
+      { maxBuffer: 8 * 1024 * 1024, encoding: 'buffer' }
+    )
+    const buffer = stdout as unknown as Buffer
+    if (!buffer || buffer.length === 0) return null
+    return `data:image/jpeg;base64,${buffer.toString('base64')}`
+  } catch {
+    return null
+  }
+}
+
 /** Streams reales del archivo (códecs, idiomas, default) + duración. */
 export async function probeMedia(absPath: string): Promise<MediaProbe> {
   const { stdout } = await exec(

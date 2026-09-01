@@ -1064,6 +1064,75 @@ body.native-video-full .player-overlay {
   cursor: none;
 }
 
+/* ------------------------------------- vista previa de la barra -- */
+
+.player-progress-wrap {
+  position: relative;
+}
+
+/* La barra se agranda al pasar por encima: más fácil de agarrar al arrastrar. */
+.player-progress {
+  touch-action: none; /* el arrastre es nuestro, no un scroll de la página */
+}
+
+.player-progress-fill {
+  position: relative;
+}
+
+.player-progress-knob {
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateY(-50%) scale(0);
+  transition: transform 0.15s ease;
+}
+
+.player-progress:hover .player-progress-knob,
+.player-progress-wrap:has(.player-preview) .player-progress-knob {
+  transform: translateY(-50%) scale(1);
+}
+
+.player-preview {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  background: rgba(12, 12, 16, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+
+.player-preview-img {
+  display: block;
+  width: 208px;
+  height: 117px;
+  object-fit: cover;
+  background: #000;
+}
+
+.player-preview-empty {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.05) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+}
+
+.player-preview-time {
+  padding: 5px 0 6px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ------------------------------------------- mini-barra (tipo Spotify) -- */
 
 /* El mismo overlay deja de cubrir la app y se vuelve una barra abajo. Al no cubrir

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { pickRandomEpisode } from '@shared/next-up'
 import type {
   AppConfig,
   DownloadEntry,
@@ -28,6 +29,8 @@ interface AppState {
   playingTarget: PlayTarget | null
   /** 'mini' = barra tipo Spotify abajo; la reproducción sigue sin desmontar el player. */
   playerView: 'full' | 'mini'
+  /** Serie en modo aleatorio: al terminar cada episodio sale otro al azar. */
+  shuffleItemId: string | null
   downloads: DownloadEntry[]
   queue: QueueEntry[]
   toasts: Toast[]
@@ -52,6 +55,8 @@ interface AppState {
   play: (itemId: string, relPath?: string) => Promise<void>
   /** Si el item tiene ≥2 versiones abre el selector; si no, reproduce directo. */
   playSmart: (itemId: string) => void
+  /** Reproduce un episodio al azar de la serie y deja el modo aleatorio activo. */
+  playRandomEpisode: (itemId: string) => void
   startDownload: (itemId: string, relPath?: string) => Promise<void>
   cancelDownload: (itemId: string, relPath: string) => Promise<void>
   deleteDownload: (itemId: string, relPath: string) => Promise<void>
@@ -78,6 +83,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   versionPickerItemId: null,
   playingTarget: null,
   playerView: 'full',
+  shuffleItemId: null,
   downloads: [],
   queue: [],
   toasts: [],
@@ -121,7 +127,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       playingTarget: target,
       playerView: opts?.preserveView && state.playingTarget ? state.playerView : 'full'
     })),
-  closePlayer: () => set({ playingTarget: null, playerView: 'full' }),
+  closePlayer: () => set({ playingTarget: null, playerView: 'full', shuffleItemId: null }),
   minimizePlayer: () => set({ playerView: 'mini' }),
   expandPlayer: () => set({ playerView: 'full' }),
 
@@ -138,6 +144,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Único punto donde se decide integrado vs externo: las vistas solo llaman a play().
   play: async (itemId, relPath) => {
+    // Elegir un título/episodio concreto sale del modo aleatorio.
+    set({ shuffleItemId: null })
     if (get().config?.playbackMode === 'external') {
       await get().playExternal(itemId, relPath)
       return
@@ -158,6 +166,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       void get().play(itemId)
     }
+  },
+
+  playRandomEpisode: (itemId) => {
+    const item = get().library.items[itemId]
+    if (!item) return
+    const episode = pickRandomEpisode(item, '')
+    if (!episode) {
+      get().pushToast('Esta serie no tiene episodios que reproducir.', 'error')
+      return
+    }
+    // play() limpia el modo aleatorio (elegir episodio concreto lo desactiva), así que
+    // se marca DESPUÉS y solo si el reproductor integrado quedó abierto.
+    void get().play(itemId, episode.relPath).then(() => {
+      if (get().playingTarget) set({ shuffleItemId: itemId })
+    })
   },
 
   addToQueue: async (itemId) => {

@@ -122,6 +122,8 @@ const api: IpcApi = {
     relPath: string | undefined,
     source: { stream: number } | { ext: string }
   ) => ipcRenderer.invoke(IPC.getSubtitleVtt, itemId, relPath, source) as Promise<string | null>,
+  getPreviewFrame: (itemId: string, relPath: string | undefined, seconds: number) =>
+    ipcRenderer.invoke(IPC.getPreviewFrame, itemId, relPath, seconds) as Promise<string | null>,
   probeMedia: (itemId: string, relPath?: string) =>
     ipcRenderer.invoke(IPC.probeMedia, itemId, relPath) as Promise<{
       probe: MediaProbe
