@@ -1881,13 +1881,7 @@ body.mobile-shell .scan-bar {
     height: 83px;
   }
 
-  /* Objetivos táctiles: los botones pequeños se quedaban en 28px de alto. */
-  .btn-sm {
-    min-height: 40px;
-  }
-
-  .toolbar .btn,
-  .episode .btn {
-    min-height: 42px;
-  }
+  /* Los tamaños táctiles NO se tocan aquí: @media (pointer: coarse) ya pone 44/42px y
+     este bloque va después en el archivo, así que cualquier min-height puesto aquí
+     los EMPEQUEÑECE en vez de mejorarlos. */
 }
