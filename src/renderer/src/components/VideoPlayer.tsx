@@ -80,7 +80,8 @@ export function VideoPlayer({
   const handleEndedRef = useRef<() => void>(() => {})
   const scrubbingRef = useRef(false)
   const previewCacheRef = useRef(new Map<number, string | null>())
-  const previewSeqRef = useRef(0)
+  const previewPendingRef = useRef(new Set<number>())
+  const previewBucketRef = useRef<number | null>(null)
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -181,7 +182,9 @@ export function VideoPlayer({
   useEffect(() => {
     let cancelled = false
     lastSavedRef.current = 0
-    previewCacheRef.current.clear() // las miniatura son de OTRO archivo
+    previewCacheRef.current.clear() // las miniaturas son de OTRO archivo
+    previewPendingRef.current.clear()
+    previewBucketRef.current = null
     setPreview(null)
     const doLoad = async (): Promise<void> => {
       let at = startAt && startAt > 0 ? startAt : undefined
@@ -475,18 +478,25 @@ export function VideoPlayer({
     const bucket = Math.max(0, Math.round(seconds / PREVIEW_BUCKET_SECONDS) * PREVIEW_BUCKET_SECONDS)
     const cached = previewCacheRef.current.get(bucket)
     setPreview({ leftPx, seconds, url: cached ?? null })
+    previewBucketRef.current = bucket
 
-    if (cached !== undefined || !window.api.getPreviewFrame) return
-    const seq = ++previewSeqRef.current
+    // Una petición por bucket y nada más: al arrastrar llegan decenas de eventos de
+    // movimiento, y sin este control cada uno lanzaba (e invalidaba) una petición, así
+    // que la miniatura no llegaba nunca.
+    if (cached !== undefined || previewPendingRef.current.has(bucket)) return
+    if (!window.api.getPreviewFrame) return
+    previewPendingRef.current.add(bucket)
     void window.api
       .getPreviewFrame(itemId, effectiveRelPath, bucket)
       .then((url) => {
+        previewPendingRef.current.delete(bucket)
         previewCacheRef.current.set(bucket, url)
-        if (seq === previewSeqRef.current) {
+        // Solo pinta si el puntero sigue sobre ese mismo tramo.
+        if (previewBucketRef.current === bucket) {
           setPreview((current) => (current ? { ...current, url } : current))
         }
       })
-      .catch(() => {})
+      .catch(() => previewPendingRef.current.delete(bucket))
   }
 
   const handleScrubStart = (event: React.PointerEvent<HTMLDivElement>): void => {
@@ -497,12 +507,14 @@ export function VideoPlayer({
       // Puntero ya liberado (o evento sintético): el arrastre sigue funcionando.
     }
     scrubbingRef.current = true
+    revealControls() // arrastrar cuenta como actividad: que no se oculte la miniatura
     updatePreview(event.clientX, event.currentTarget)
   }
 
   const handleScrubMove = (event: React.PointerEvent<HTMLDivElement>): void => {
     // Con ratón se previsualiza al pasar por encima; en táctil solo al arrastrar.
     if (!scrubbingRef.current && event.pointerType === 'touch') return
+    revealControls()
     updatePreview(event.clientX, event.currentTarget)
   }
 
@@ -512,6 +524,7 @@ export function VideoPlayer({
     const seconds = secondsAt(event.clientX, event.currentTarget)
     if (seconds !== null) engine.seekTo(seconds)
     setPreview(null)
+    revealControls()
   }
 
   const handleSkipIntro = (): void => {

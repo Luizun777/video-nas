@@ -57,6 +57,18 @@ public class NasPlugin extends Plugin {
     private StreamServer server;
     private String bridgeToken;
 
+    private final Object previewLock = new Object();
+    private android.media.MediaMetadataRetriever previewRetriever;
+    private String previewUrl;
+
+    private void releasePreviewRetriever() {
+        if (previewRetriever != null) {
+            try { previewRetriever.release(); } catch (Exception ignored) { }
+            previewRetriever = null;
+        }
+        previewUrl = null;
+    }
+
     @Override
     public void load() {
         byte[] tokenBytes = new byte[16];
@@ -80,6 +92,9 @@ public class NasPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        synchronized (previewLock) {
+            releasePreviewRetriever();
+        }
         if (server != null) server.stop();
         manager.closeAll();
         ioPool.shutdownNow();
@@ -232,27 +247,36 @@ public class NasPlugin extends Plugin {
             return;
         }
         ioPool.execute(() -> {
-            android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
-            try {
-                retriever.setDataSource(url, new java.util.HashMap<>());
-                android.graphics.Bitmap frame = retriever.getFrameAtTime(
-                    (long) (timeMs * 1000),
-                    android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                if (frame == null) {
+            // El retriever se reutiliza mientras se previsualice el MISMO archivo:
+            // abrir la conexión y demuxar de nuevo cuesta ~2,5 s, y arrastrando por la
+            // barra se piden muchos fotogramas seguidos.
+            synchronized (previewLock) {
+                try {
+                    if (previewRetriever == null || !url.equals(previewUrl)) {
+                        releasePreviewRetriever();
+                        previewRetriever = new android.media.MediaMetadataRetriever();
+                        previewRetriever.setDataSource(url, new java.util.HashMap<>());
+                        previewUrl = url;
+                    }
+                    android.graphics.Bitmap frame = previewRetriever.getFrameAtTime(
+                        (long) (timeMs * 1000),
+                        android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                    if (frame == null) {
+                        call.resolve(new JSObject());
+                        return;
+                    }
+                    int width = PREVIEW_WIDTH;
+                    int height = Math.max(1, frame.getHeight() * width / Math.max(1, frame.getWidth()));
+                    android.graphics.Bitmap scaled =
+                        android.graphics.Bitmap.createScaledBitmap(frame, width, height, true);
+                    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                    scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out);
+                    call.resolve(new JSObject()
+                        .put("data", android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)));
+                } catch (Exception e) {
+                    releasePreviewRetriever();
                     call.resolve(new JSObject());
-                    return;
                 }
-                int width = PREVIEW_WIDTH;
-                int height = Math.max(1, frame.getHeight() * width / Math.max(1, frame.getWidth()));
-                android.graphics.Bitmap scaled = android.graphics.Bitmap.createScaledBitmap(frame, width, height, true);
-                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out);
-                call.resolve(new JSObject()
-                    .put("data", android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)));
-            } catch (Exception e) {
-                call.resolve(new JSObject());
-            } finally {
-                try { retriever.release(); } catch (Exception ignored) { }
             }
         });
     }

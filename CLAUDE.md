@@ -233,6 +233,22 @@ tests/         módulos puros de core (corren sin Electron ni Android)
   la whitelist (el caso normal: falla solo el audio). Recodificar un 4K en vivo tarda
   demasiado en dar el primer frame; copiándolo arranca enseguida (medido con el NAS
   real). Copiar HEVC a fMP4 funciona tal cual, sin `-tag:v hvc1`.
+- **En los plugins Capacitor, los números de JS se leen con `call.getDouble`, no con
+  `getLong`.** Con `getLong` el valor caía al default y `seek` recibía 0: cada intento
+  de saltar en la tablet reiniciaba el episodio desde el principio (parecía un fallo de
+  libVLC y era el puente JS↔Java).
+- El nombre del archivo manda para numerar episodios, y el respaldo de "dígitos finales"
+  es peligroso: en "Ranma ½ - 155 - La guerra de animadoras parte 1" capturaba el 1 de
+  "parte 1". `tests/episode-numbering.test.ts` fija los patrones reales de las 31 series
+  del NAS; al tocar el parser, correrlo y validar además con un informe sobre todos los
+  nombres reales (series con archivos sin número o con claves duplicadas).
+- Las miniaturas de la barra se piden por buckets Y con control de peticiones en vuelo:
+  sin lo segundo, cada evento de movimiento del dedo lanzaba una petición que
+  invalidaba la anterior y la imagen no llegaba nunca. En Android además se reutiliza
+  el `MediaMetadataRetriever` mientras sea el mismo archivo (2,1 s la primera, ~0,8 s
+  las siguientes; sin caché eran 2,5 s cada una).
+- Arrastrar la barra tiene que contar como actividad (`revealControls`): si no, los
+  controles se auto-ocultan a los 3 s y se llevan la miniatura con ellos.
 - No todo fallo de reproducción es de la app: "1917" del NAS tiene el contenedor dañado
   a partir del minuto ~55 (`invalid as first byte of an EBML number` sobre los 3 GB) y
   ahí fallan por igual Chromium, el transcode y ffmpeg. Antes de perseguir un bug,
