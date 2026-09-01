@@ -6,7 +6,10 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.ts') }
+        input: { index: resolve(__dirname, 'src/main/index.ts') },
+        // Los paquetes de binarios resuelven su ruta con __dirname: si rollup los
+        // bundlea, la ruta apunta a la nada. Van como require() en runtime.
+        external: ['ffmpeg-static', '@ffprobe-installer/ffprobe']
       }
     },
     resolve: {

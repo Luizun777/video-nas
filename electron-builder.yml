@@ -7,14 +7,24 @@ directories:
 files:
   - out/**/*
   - package.json
+  # ffmpeg/ffprobe van como node_modules reales (external en el build de main).
+  - node_modules/ffmpeg-static/**/*
+  - node_modules/@ffprobe-installer/**/*
+
+# Un binario dentro del asar no puede ejecutarse; estos se quedan fuera y
+# ffmpeg.ts corrige la ruta con app.asar -> app.asar.unpacked.
+asarUnpack:
+  - "**/node_modules/ffmpeg-static/**"
+  - "**/node_modules/@ffprobe-installer/**"
 
 mac:
   category: public.app-category.entertainment
   target:
     - target: dmg
       arch:
+        # Solo arm64: ffmpeg-static/ffprobe instalan el binario de la arquitectura
+        # donde corrió npm install; un dmg x64 llevaría binarios arm64 rotos.
         - arm64
-        - x64
   darkModeSupport: true
   # App local sin firmar: sin identidad de desarrollador no hay notarización.
   identity: null

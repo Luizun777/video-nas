@@ -306,6 +306,32 @@ export interface TrackSet {
   subtitles: MediaTrack[]
 }
 
+/** Un stream del archivo según ffprobe, ya normalizado (solo desktop). */
+export interface ProbeStream {
+  /** Índice global del stream en el archivo (el que usa -map 0:N). */
+  index: number
+  type: 'video' | 'audio' | 'subtitle'
+  codec: string
+  language?: string
+  title?: string
+  channels?: number
+  /** true = disposition.default del contenedor. */
+  isDefault?: boolean
+}
+
+export interface MediaProbe {
+  durationSec: number
+  streams: ProbeStream[]
+}
+
+/** Cómo reproducir este archivo en desktop: directo o transcodificando al vuelo. */
+export interface PlaybackPlan {
+  mode: 'direct' | 'transcode'
+  /** En transcode: true = el video se copia (solo el audio es el problema). */
+  videoCopy: boolean
+  reason?: string
+}
+
 /** Subtítulo externo (.srt/.ass) encontrado junto al video al momento de reproducir. */
 export interface SubtitleFileInfo {
   name: string
