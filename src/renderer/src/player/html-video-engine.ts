@@ -1,5 +1,12 @@
-import { videoStreamUrl } from '@shared/playback-url'
-import type { TrackSet } from '@shared/types'
+import { subtitleTrackUrl, transcodeSessionUrl, videoStreamUrl } from '@shared/playback-url'
+import type {
+  MediaProbe,
+  MediaTrack,
+  PlaybackPlan,
+  ProbeStream,
+  SubtitleFileInfo,
+  TrackSet
+} from '@shared/types'
 import type {
   EngineCaps,
   EngineError,
@@ -16,19 +23,59 @@ const SILENT_AUDIO_STRIKES = 2
 /** Cuenta acumulada de bytes de audio decodificados: Chromium-only, no estándar. */
 type VideoWithAudioByteCount = HTMLVideoElement & { webkitAudioDecodedByteCount?: number }
 
+/** video.audioTracks existe con la blink feature AudioVideoTracks (main la activa). */
+interface ChromiumAudioTrack {
+  id: string
+  enabled: boolean
+}
+type VideoWithAudioTracks = HTMLVideoElement & {
+  audioTracks?: { length: number; [index: number]: ChromiumAudioTrack }
+}
+
+/** Subtítulos de texto convertibles a WebVTT; el resto (PGS/VobSub) son bitmaps. */
+const TEXT_SUBTITLE_CODECS = new Set(['subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text'])
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  es: 'Español', spa: 'Español', esp: 'Español', lat: 'Español latino', mx: 'Español latino',
+  en: 'Inglés', eng: 'Inglés', ing: 'Inglés',
+  ja: 'Japonés', jpn: 'Japonés', fr: 'Francés', fre: 'Francés', fra: 'Francés',
+  de: 'Alemán', ger: 'Alemán', it: 'Italiano', ita: 'Italiano',
+  pt: 'Portugués', por: 'Portugués', und: ''
+}
+
+function languageLabel(language?: string): string {
+  if (!language) return ''
+  return LANGUAGE_LABELS[language.toLowerCase()] ?? language
+}
+
+function channelsLabel(channels?: number): string {
+  if (!channels) return ''
+  if (channels >= 8) return '7.1'
+  if (channels >= 6) return '5.1'
+  if (channels === 2) return 'estéreo'
+  if (channels === 1) return 'mono'
+  return `${channels}ch`
+}
+
+function audioLabel(stream: ProbeStream, position: number): string {
+  const base = stream.title || languageLabel(stream.language) || `Pista ${position + 1}`
+  const extra = [stream.codec.toUpperCase(), channelsLabel(stream.channels)].filter(Boolean).join(' ')
+  return extra ? `${base} (${extra})` : base
+}
+
+function subtitleLabel(stream: ProbeStream, position: number): string {
+  return stream.title || languageLabel(stream.language) || `Subtítulos ${position + 1}`
+}
+
 /**
- * Motor sobre el <video> de Chromium. Incluye el watchdog de códecs indecodificables
- * que NO disparan onError: Chromium no falla el elemento, solo omite en silencio lo
- * que no sabe decodificar.
- *   - Video (p.ej. HEVC 4K 10-bit en tablets): con metadata cargada, un stream
- *     decodificable ya reporta dimensiones; si tras unos segundos sigue en 0x0,
- *     jamás habrá frames.
- *   - Audio (p.ej. AC3/DTS, muy común en rips "Dual-Lat" — Chromium en Android no
- *     trae esos decodificadores por licencias, a diferencia de macOS): el video se
- *     ve perfecto pero webkitAudioDecodedByteCount se queda clavado en 0 mientras
- *     avanza el tiempo. 2 strikes de ~4s dan margen a que el decodificador arranque
- *     sin dejar al usuario escuchando silencio de más.
- * Corre por intervalo (no timeupdate) para cubrir también el caso atascado en pausa.
+ * Motor sobre el <video> de Chromium (desktop). Con window.api.probeMedia disponible,
+ * cada carga pasa por ffprobe: lo que Chromium no decodifica (DivX, MPEG-2, DTS…)
+ * arranca directamente en una sesión de transcode (fMP4 por videofile://transcode) en
+ * vez de dejar pantalla negra. El seek en transcode se finge: se mata la sesión y se
+ * relanza con -ss, y currentTime visible = offset de la sesión + tiempo del elemento.
+ *
+ * El watchdog de códecs queda como red de seguridad (falsos negativos del plan):
+ * un solo reintento en transcode, y solo si eso también falla se cae al externo.
  */
 export class HtmlVideoEngine implements PlaybackEngine {
   readonly caps: EngineCaps = {
@@ -49,6 +96,19 @@ export class HtmlVideoEngine implements PlaybackEngine {
   private silentAudioStrikes = 0
   private lastAudioCheckTime = 0
 
+  /** Sube en cada load(): los pasos async abandonan si el target ya cambió. */
+  private loadSeq = 0
+  private probe: MediaProbe | null = null
+  private plan: PlaybackPlan | null = null
+  private mode: 'direct' | 'transcode' = 'direct'
+  private transcode: { sessionId: string; offset: number } | null = null
+  private transcodeRetried = false
+  /** Índice GLOBAL del stream de audio elegido (null = el default del archivo). */
+  private selectedAudioIndex: number | null = null
+  private externalSubs: SubtitleFileInfo[] = []
+  private activeSubtitleId: string | null = null
+  private trackEl: HTMLTrackElement | null = null
+
   get videoElement(): HTMLVideoElement | null {
     return this.el
   }
@@ -61,6 +121,10 @@ export class HtmlVideoEngine implements PlaybackEngine {
     if (!el) return
 
     el.volume = this.volume
+    // Los <track> WebVTT exigen crossOrigin, y solo el desktop los sirve (con ACAO en
+    // todas las respuestas de videofile://). En el preview del navegador no se toca.
+    if (window.api.probeMedia) el.crossOrigin = 'anonymous'
+
     const emit = (event: EngineEvent) => (): void => this.emit(event)
     const onPlay = emit('play')
     const onPause = emit('pause')
@@ -68,12 +132,14 @@ export class HtmlVideoEngine implements PlaybackEngine {
     const onDurationChange = emit('durationchange')
     const onEnded = emit('ended')
     const onLoadedMetadata = (): void => {
+      // En transcode el offset ya viene aplicado con -ss; esto es solo para directo.
       const startAt = this.target?.startAt
-      if (startAt && startAt > 0 && startAt < el.duration) el.currentTime = startAt
+      if (this.mode === 'direct' && startAt && startAt > 0 && startAt < el.duration) {
+        el.currentTime = startAt
+      }
       this.emit('durationchange')
     }
-    // Chromium no distingue el motivo; históricamente aquí siempre es códec (DivX/MPEG-2).
-    const onError = (): void => this.emitError({ reason: 'codec' })
+    const onError = (): void => this.handleCodecProblem(false)
 
     el.addEventListener('play', onPlay)
     el.addEventListener('pause', onPause)
@@ -92,21 +158,111 @@ export class HtmlVideoEngine implements PlaybackEngine {
       el.removeEventListener('error', onError)
     }
 
-    if (this.target) this.applyLoad()
+    if (this.target) void this.prepareAndLoad()
   }
 
   load(target: EngineLoadTarget): void {
     this.target = target
-    if (this.el) this.applyLoad()
+    this.loadSeq += 1
+    this.stopActiveTranscode()
+    this.transcodeRetried = false
+    this.selectedAudioIndex = null
+    this.externalSubs = []
+    this.probe = null
+    this.plan = null
+    this.mode = 'direct'
+    this.clearSubtitleTrack()
+    this.activeSubtitleId = null
+    if (this.el) void this.prepareAndLoad()
   }
 
-  private applyLoad(): void {
-    const el = this.el
+  private async prepareAndLoad(): Promise<void> {
+    const seq = this.loadSeq
     const target = this.target
-    if (!el || !target) return
-    el.src = videoStreamUrl(target.itemId, target.relPath)
-    this.startWatchdog()
+    if (!target || !this.el) return
+
+    if (window.api.probeMedia) {
+      const result = await window.api.probeMedia(target.itemId, target.relPath).catch(() => null)
+      if (seq !== this.loadSeq) return
+      if (result) {
+        this.probe = result.probe
+        this.plan = result.plan
+      }
+    }
+
+    if (this.plan?.mode === 'transcode' && window.api.startTranscode) {
+      await this.startTranscodeAt(target.startAt ?? 0, this.plan.videoCopy)
+    } else {
+      this.mode = 'direct'
+      this.el.src = videoStreamUrl(target.itemId, target.relPath)
+      this.startWatchdog()
+    }
+    if (seq !== this.loadSeq) return
+
+    this.emit('tracksChanged')
+    void this.loadExternalSubtitles(seq, target)
   }
+
+  private async loadExternalSubtitles(seq: number, target: EngineLoadTarget): Promise<void> {
+    if (!window.api.listSubtitleFiles) return
+    const subs = await window.api.listSubtitleFiles(target.itemId, target.relPath).catch(() => [])
+    if (seq !== this.loadSeq) return
+    this.externalSubs = subs
+    if (subs.length > 0) this.emit('tracksChanged')
+  }
+
+  // ------------------------------------------------------------- transcode --
+
+  private async startTranscodeAt(seconds: number, videoCopy: boolean): Promise<void> {
+    const seq = this.loadSeq
+    const target = this.target
+    const el = this.el
+    if (!target || !el || !window.api.startTranscode) return
+
+    this.stopActiveTranscode()
+    const started = await window.api
+      .startTranscode({
+        itemId: target.itemId,
+        relPath: target.relPath,
+        startAt: seconds,
+        audioStreamIndex: this.selectedAudioIndex ?? undefined,
+        videoCopy
+      })
+      .catch(() => null)
+    if (seq !== this.loadSeq || !started) return
+
+    this.mode = 'transcode'
+    this.transcode = { sessionId: started.sessionId, offset: seconds }
+    el.src = transcodeSessionUrl(started.sessionId)
+    void el.play().catch(() => {})
+    this.startWatchdog()
+    this.emit('durationchange')
+  }
+
+  private stopActiveTranscode(): void {
+    if (this.transcode && window.api.stopTranscode) {
+      void window.api.stopTranscode(this.transcode.sessionId)
+    }
+    this.transcode = null
+  }
+
+  /** onError nativo o watchdog: un reintento en transcode; si ya estaba ahí, al externo. */
+  private handleCodecProblem(videoDecodes: boolean): void {
+    if (
+      this.mode === 'direct' &&
+      !this.transcodeRetried &&
+      window.api.startTranscode &&
+      this.target
+    ) {
+      this.transcodeRetried = true
+      const resumeAt = this.getState().currentTime
+      void this.startTranscodeAt(resumeAt, videoDecodes)
+      return
+    }
+    this.emitError({ reason: 'codec' })
+  }
+
+  // ------------------------------------------------------------- controles --
 
   play(): void {
     void this.el?.play().catch(() => {})
@@ -118,14 +274,19 @@ export class HtmlVideoEngine implements PlaybackEngine {
 
   seekTo(seconds: number): void {
     const el = this.el
-    if (!el || !el.duration) return
+    if (!el) return
+    if (this.mode === 'transcode') {
+      const duration = this.probe?.durationSec ?? 0
+      const clamped = Math.max(0, duration ? Math.min(duration - 1, seconds) : seconds)
+      void this.startTranscodeAt(clamped, this.plan?.videoCopy ?? false)
+      return
+    }
+    if (!el.duration) return
     el.currentTime = Math.max(0, Math.min(el.duration, seconds))
   }
 
   seekBy(deltaSeconds: number): void {
-    const el = this.el
-    if (!el) return
-    this.seekTo(el.currentTime + deltaSeconds)
+    this.seekTo(this.getState().currentTime + deltaSeconds)
   }
 
   setVolume(volume01: number): void {
@@ -136,6 +297,13 @@ export class HtmlVideoEngine implements PlaybackEngine {
   getState(): EngineState {
     const el = this.el
     if (!el) return { currentTime: 0, duration: 0, playing: false }
+    if (this.mode === 'transcode') {
+      return {
+        currentTime: (this.transcode?.offset ?? 0) + el.currentTime,
+        duration: this.probe?.durationSec ?? 0,
+        playing: !el.paused
+      }
+    }
     return {
       currentTime: el.currentTime,
       duration: Number.isFinite(el.duration) ? el.duration : 0,
@@ -143,14 +311,113 @@ export class HtmlVideoEngine implements PlaybackEngine {
     }
   }
 
+  // ----------------------------------------------------------------- pistas --
+
   listTracks(): TrackSet {
-    // Se llena en F14 (ffprobe + AudioVideoTracks + <track> WebVTT).
-    return { audio: [], subtitles: [] }
+    if (!this.probe) return { audio: [], subtitles: [] }
+
+    const audioStreams = this.probe.streams.filter((s) => s.type === 'audio')
+    const defaultAudio = audioStreams.find((s) => s.isDefault) ?? audioStreams[0]
+    const selectedAudio = this.selectedAudioIndex ?? defaultAudio?.index
+
+    const audio: MediaTrack[] = audioStreams.map((stream, position) => ({
+      id: String(stream.index),
+      kind: 'audio',
+      label: audioLabel(stream, position),
+      language: stream.language,
+      codec: stream.codec,
+      selected: stream.index === selectedAudio
+    }))
+
+    const subtitleStreams = this.probe.streams.filter((s) => s.type === 'subtitle')
+    const subtitles: MediaTrack[] = subtitleStreams.map((stream, position) => ({
+      id: String(stream.index),
+      kind: 'subtitle',
+      label: subtitleLabel(stream, position),
+      language: stream.language,
+      codec: stream.codec,
+      unsupported: !TEXT_SUBTITLE_CODECS.has(stream.codec),
+      selected: this.activeSubtitleId === String(stream.index)
+    }))
+    for (let i = 0; i < this.externalSubs.length; i++) {
+      const sub = this.externalSubs[i]
+      const id = `ext:${i}`
+      subtitles.push({
+        id,
+        kind: 'subtitle',
+        label: sub.language ? `${languageLabel(sub.language) || sub.language} (externo)` : sub.name,
+        language: sub.language,
+        selected: this.activeSubtitleId === id
+      })
+    }
+
+    return { audio, subtitles }
   }
 
-  setAudioTrack(): void {}
-  setSubtitleTrack(): void {}
+  setAudioTrack(id: string): void {
+    const index = Number(id)
+    if (!Number.isFinite(index)) return
+    this.selectedAudioIndex = index
+
+    if (this.mode === 'transcode') {
+      // Cambiar de pista en transcode = relanzar la sesión donde íbamos.
+      void this.startTranscodeAt(this.getState().currentTime, this.plan?.videoCopy ?? false)
+      this.emit('tracksChanged')
+      return
+    }
+
+    const el = this.el as VideoWithAudioTracks | null
+    const audioStreams = (this.probe?.streams ?? []).filter((s) => s.type === 'audio')
+    const position = audioStreams.findIndex((s) => s.index === index)
+    const tracks = el?.audioTracks
+    if (tracks && position >= 0 && tracks.length === audioStreams.length) {
+      // Cambio en vivo vía blink AudioVideoTracks: mismo orden que el demuxer.
+      for (let i = 0; i < tracks.length; i++) tracks[i].enabled = i === position
+      this.emit('tracksChanged')
+      return
+    }
+
+    // Sin audioTracks no hay forma de conmutar en directo: sesión con -map (el video
+    // se copia, así que es rápido y sin pérdida).
+    if (window.api.startTranscode) {
+      void this.startTranscodeAt(this.getState().currentTime, true)
+    }
+    this.emit('tracksChanged')
+  }
+
+  setSubtitleTrack(id: string | null): void {
+    this.clearSubtitleTrack()
+    this.activeSubtitleId = id
+    if (id !== null && this.el && this.target) {
+      let url: string | null = null
+      if (id.startsWith('ext:')) {
+        url = this.externalSubs[Number(id.slice(4))]?.url ?? null
+      } else {
+        url = subtitleTrackUrl(this.target.itemId, this.target.relPath, { stream: Number(id) })
+      }
+      if (url) {
+        const track = document.createElement('track')
+        track.kind = 'subtitles'
+        track.src = url
+        track.default = true
+        this.el.appendChild(track)
+        track.track.mode = 'showing'
+        this.trackEl = track
+      }
+    }
+    this.emit('tracksChanged')
+  }
+
+  private clearSubtitleTrack(): void {
+    if (this.trackEl) {
+      this.trackEl.remove()
+      this.trackEl = null
+    }
+  }
+
   setViewMode(): void {}
+
+  // ------------------------------------------------------------------ misc --
 
   on(event: EngineEvent, cb: () => void): () => void {
     let set = this.listeners.get(event)
@@ -168,7 +435,10 @@ export class HtmlVideoEngine implements PlaybackEngine {
   }
 
   destroy(): void {
+    this.loadSeq += 1
     this.stopWatchdog()
+    this.stopActiveTranscode()
+    this.clearSubtitleTrack()
     this.domCleanup?.()
     this.domCleanup = null
     if (this.el) {
@@ -188,6 +458,17 @@ export class HtmlVideoEngine implements PlaybackEngine {
     this.errorListeners.forEach((cb) => cb(error))
   }
 
+  // -------------------------------------------------------------- watchdog --
+  // Pistas indecodificables que NO disparan onError: Chromium no falla el <video>,
+  // solo omite en silencio lo que no sabe decodificar.
+  //   - Video (p.ej. HEVC 4K 10-bit en tablets): con metadata cargada, un stream
+  //     decodificable ya reporta dimensiones; si tras unos segundos sigue en 0x0,
+  //     jamás habrá frames.
+  //   - Audio (p.ej. AC3/DTS): el video se ve perfecto pero
+  //     webkitAudioDecodedByteCount se queda clavado en 0 mientras avanza el tiempo.
+  //     2 strikes de ~4s dan margen a que el decodificador arranque.
+  // Corre por intervalo (no timeupdate) para cubrir también el caso atascado en pausa.
+
   private startWatchdog(): void {
     this.stopWatchdog()
     this.unsupportedFired = false
@@ -201,7 +482,7 @@ export class HtmlVideoEngine implements PlaybackEngine {
       if (video.readyState >= 1 && video.videoWidth === 0 && !video.error) {
         this.unsupportedFired = true
         this.stopWatchdog()
-        this.emitError({ reason: 'codec' })
+        this.handleCodecProblem(false)
         return
       }
 
@@ -216,7 +497,7 @@ export class HtmlVideoEngine implements PlaybackEngine {
       if (this.silentAudioStrikes >= SILENT_AUDIO_STRIKES) {
         this.unsupportedFired = true
         this.stopWatchdog()
-        this.emitError({ reason: 'codec' })
+        this.handleCodecProblem(true) // el video sí decodifica: copiarlo en el reintento
       }
     }, UNSUPPORTED_CHECK_INTERVAL_MS)
   }

@@ -45,7 +45,12 @@ export const IPC = {
 
   getPlaybackProgress: 'progress:get',
   setPlaybackProgress: 'progress:set',
-  clearPlaybackProgress: 'progress:clear'
+  clearPlaybackProgress: 'progress:clear',
+
+  listSubtitleFiles: 'playback:subtitle-files',
+  probeMedia: 'playback:probe',
+  startTranscode: 'transcode:start',
+  stopTranscode: 'transcode:stop'
 } as const
 
 export const EVENTS = {

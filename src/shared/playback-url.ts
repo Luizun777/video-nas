@@ -37,3 +37,25 @@ export function parseVideoStreamUrl(url: string): { itemId: string; relPath?: st
     return null
   }
 }
+
+// --- URLs solo-desktop (el motor nativo de Android no las usa) -------------
+// Mismo esquema videofile:// con otros hosts: "subs" sirve WebVTT (pista embebida
+// convertida con ffmpeg, o un .srt externo) y "transcode" el fMP4 de la sesión.
+
+/** source.stream = índice global de la pista embebida; source.ext = ruta del .srt
+ *  RELATIVA al directorio del video. */
+export function subtitleTrackUrl(
+  itemId: string,
+  relPath: string | undefined,
+  source: { stream: number } | { ext: string }
+): string {
+  const params = new URLSearchParams({ itemId })
+  if (relPath) params.set('relPath', relPath)
+  if ('stream' in source) params.set('stream', String(source.stream))
+  else params.set('ext', source.ext)
+  return `videofile://subs?${params.toString()}`
+}
+
+export function transcodeSessionUrl(sessionId: string): string {
+  return `videofile://transcode?${new URLSearchParams({ session: sessionId }).toString()}`
+}

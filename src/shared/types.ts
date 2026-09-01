@@ -457,6 +457,16 @@ export interface IpcApi {
   setIntroMark(itemId: string, seconds: number): Promise<LibraryItem | null>
   /** Subtítulos externos junto al video (opcional: Android desde F13, desktop desde F14). */
   listSubtitleFiles?(itemId: string, relPath?: string): Promise<SubtitleFileInfo[]>
+  /** Solo desktop: ffprobe + decisión directo/transcode. Android usa libVLC y no lo trae. */
+  probeMedia?(itemId: string, relPath?: string): Promise<{ probe: MediaProbe; plan: PlaybackPlan } | null>
+  startTranscode?(options: {
+    itemId: string
+    relPath?: string
+    startAt: number
+    audioStreamIndex?: number
+    videoCopy: boolean
+  }): Promise<{ sessionId: string } | null>
+  stopTranscode?(sessionId: string): Promise<void>
   listExternalPlayers(): Promise<ExternalPlayerInfo[]>
   chooseExternalPlayer(): Promise<string | null>
 

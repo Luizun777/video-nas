@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process'
+import { promises as nodeFs } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { EVENTS, IPC } from '@shared/ipc-channels'
@@ -31,6 +33,12 @@ import { discoverSmbServers } from './nas/discovery'
 import { resolveAbsolutePath } from './playback/resolve'
 import { readChapterMarks } from './playback/mkv-chapter-reader'
 import { listExternalPlayers } from './playback/external-players'
+import { probeMedia } from './playback/ffmpeg'
+import { startTranscodeSession, stopTranscodeSession } from './playback/transcode-session'
+import { decidePlaybackPlan } from '@core/playback/media-probe'
+import { findSubtitleCandidates } from '@core/playback/subtitle-candidates'
+import { pickTargetRelPath } from '@core/playback/resolve-target'
+import { subtitleTrackUrl } from '@shared/playback-url'
 import {
   closePlayerWindow,
   consumePendingAttach,
@@ -353,6 +361,77 @@ export function registerIpc(): void {
     (_e, entry: Omit<PlaybackProgressEntry, 'updatedAt' | 'finished'>): void => setProgress(entry)
   )
   ipcMain.handle(IPC.clearPlaybackProgress, (_e, key: string): void => clearProgress(key))
+
+  // ---- Pistas, subtítulos y transcode (solo desktop) -----------------------
+  ipcMain.handle(IPC.probeMedia, async (_e, itemId: string, relPath?: string) => {
+    const resolved = await resolveAbsolutePath(itemId, relPath)
+    if ('error' in resolved) return null
+    try {
+      const probe = await probeMedia(resolved.absPath)
+      return { probe, plan: decidePlaybackPlan(probe) }
+    } catch {
+      // Sin ffprobe (o archivo raro) se reproduce directo, como antes de F14.
+      return null
+    }
+  })
+
+  ipcMain.handle(IPC.listSubtitleFiles, async (_e, itemId: string, relPath?: string) => {
+    const item = getItem(itemId)
+    if (!item) return []
+    const resolved = await resolveAbsolutePath(itemId, relPath)
+    if ('error' in resolved) return []
+
+    const videoDir = dirname(resolved.absPath)
+    const videoFileName = basename(resolved.absPath)
+    const entries = await nodeFs.readdir(videoDir, { withFileTypes: true }).catch(() => [])
+    const subsDirEntries: { dir: string; names: string[] }[] = []
+    for (const entry of entries) {
+      if (entry.isDirectory() && /^(subs|subtitles|subtitulos)$/i.test(entry.name)) {
+        const inner = await nodeFs.readdir(join(videoDir, entry.name), { withFileTypes: true }).catch(() => [])
+        subsDirEntries.push({
+          dir: entry.name,
+          names: inner.filter((e) => e.isFile()).map((e) => e.name)
+        })
+      }
+    }
+
+    const target = pickTargetRelPath(item, relPath)
+    return findSubtitleCandidates({
+      videoFileName,
+      dirEntries: entries.filter((e) => e.isFile()).map((e) => e.name),
+      subsDirEntries
+    }).map((candidate) => ({
+      ...candidate,
+      url: subtitleTrackUrl(itemId, target, { ext: candidate.relPath })
+    }))
+  })
+
+  ipcMain.handle(
+    IPC.startTranscode,
+    async (
+      _e,
+      options: {
+        itemId: string
+        relPath?: string
+        startAt: number
+        audioStreamIndex?: number
+        videoCopy: boolean
+      }
+    ) => {
+      const resolved = await resolveAbsolutePath(options.itemId, options.relPath)
+      if ('error' in resolved) return null
+      return startTranscodeSession({
+        absPath: resolved.absPath,
+        startAt: options.startAt,
+        audioStreamIndex: options.audioStreamIndex,
+        videoCopy: options.videoCopy
+      })
+    }
+  )
+
+  ipcMain.handle(IPC.stopTranscode, (_e, sessionId: string): void => {
+    stopTranscodeSession(sessionId)
+  })
 
   // ---- Eventos hacia el renderer ------------------------------------------
   onProgress((progress) => broadcast(EVENTS.scanProgress, progress))

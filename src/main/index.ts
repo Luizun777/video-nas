@@ -15,9 +15,14 @@ import { loadSeedToken } from './adapters/node-seed'
 import { initDownloadManager } from '@core/downloads/download-manager'
 import { nodeDownloadTransfer } from './adapters/node-download-transfer'
 import { registerVideoFileProtocol } from './playback/stream-protocol'
+import { stopTranscodeSession } from './playback/transcode-session'
 import { initScanner, refreshStatuses, startScan } from '@core/scanner/scan-orchestrator'
 import { desktopScanEnv } from './adapters/desktop-scan-env'
 import { cacheRoot, ensureCacheDirs } from './tmdb/image-cache'
+
+// Expone video.audioTracks (cambio de pista de audio en vivo): Chromium lo tiene
+// implementado pero detrás de esta blink feature.
+app.commandLine.appendSwitch('enable-blink-features', 'AudioVideoTracks')
 
 // Las portadas se sirven por un protocolo propio en lugar de file://, para no tener
 // que desactivar webSecurity en el renderer.
@@ -99,7 +104,9 @@ app.on('window-all-closed', () => {
 })
 
 // El JsonStore escribe con debounce: sin este flush, el último save de progreso
-// (el que guarda dónde te quedaste al cerrar) se puede perder.
+// (el que guarda dónde te quedaste al cerrar) se puede perder. El ffmpeg de una
+// sesión de transcode viva tampoco muere solo con el proceso padre.
 app.on('before-quit', () => {
   void flushProgress()
+  stopTranscodeSession()
 })

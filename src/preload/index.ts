@@ -7,9 +7,12 @@ import type {
   DownloadEntry,
   ExternalPlayerInfo,
   IpcApi,
+  MediaProbe,
+  PlaybackPlan,
   PlaybackProgressEntry,
   PlayTarget,
   QueueEntry,
+  SubtitleFileInfo,
   Library,
   LibraryItem,
   MediaKind,
@@ -112,6 +115,18 @@ const api: IpcApi = {
     ipcRenderer.invoke(IPC.setPlaybackProgress, entry) as Promise<void>,
   clearPlaybackProgress: (key: string) =>
     ipcRenderer.invoke(IPC.clearPlaybackProgress, key) as Promise<void>,
+
+  listSubtitleFiles: (itemId: string, relPath?: string) =>
+    ipcRenderer.invoke(IPC.listSubtitleFiles, itemId, relPath) as Promise<SubtitleFileInfo[]>,
+  probeMedia: (itemId: string, relPath?: string) =>
+    ipcRenderer.invoke(IPC.probeMedia, itemId, relPath) as Promise<{
+      probe: MediaProbe
+      plan: PlaybackPlan
+    } | null>,
+  startTranscode: (options) =>
+    ipcRenderer.invoke(IPC.startTranscode, options) as Promise<{ sessionId: string } | null>,
+  stopTranscode: (sessionId: string) =>
+    ipcRenderer.invoke(IPC.stopTranscode, sessionId) as Promise<void>,
 
   onScanProgress: (cb) => subscribe<ScanProgress>(EVENTS.scanProgress, cb),
   onLibraryChanged: (cb) => subscribe<Library>(EVENTS.libraryChanged, cb),
