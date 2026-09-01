@@ -7,6 +7,7 @@ import type {
   SubtitleFileInfo,
   TrackSet
 } from '@shared/types'
+import { isSupportedVideoCodec } from '@core/playback/media-probe'
 import type {
   EngineCaps,
   EngineError,
@@ -260,7 +261,12 @@ export class HtmlVideoEngine implements PlaybackEngine {
     ) {
       this.transcodeRetried = true
       const resumeAt = this.getState().currentTime
-      void this.startTranscodeAt(resumeAt, videoDecodes)
+      // Si el video SÍ es de un códec que Chromium decodifica (el caso típico: falló
+      // solo el audio), se copia en vez de recodificarlo: re-encodear un 4K en vivo
+      // tarda demasiado en dar el primer frame.
+      const videoStream = this.probe?.streams.find((s) => s.type === 'video')
+      const videoCopy = videoStream ? isSupportedVideoCodec(videoStream.codec) : videoDecodes
+      void this.startTranscodeAt(resumeAt, videoCopy)
       return
     }
     this.emitError({ reason: 'codec' })

@@ -223,4 +223,14 @@ tests/         módulos puros de core (corren sin Electron ni Android)
 - Para depurar el desktop por CDP: `npx electron-vite dev --outDir out --
   --remote-debugging-port=N`. Matar la instancia anterior de verdad (`pkill -9 -f
   Electron`) antes de reabrir: si el puerto queda ocupado, la app arranca SIN devtools
-  y te conectas por error a la instancia vieja.
+  y te conectas por error a la instancia vieja. Y tras tocar `electron.vite.config.ts`
+  hay que REINICIAR el dev server: con el config viejo en memoria, un alias nuevo no
+  resuelve y el renderer queda en blanco (el build de producción sí funciona).
+- Cuando el watchdog/onError manda a transcode, el video se COPIA si su códec está en
+  la whitelist (el caso normal: falla solo el audio). Recodificar un 4K en vivo tarda
+  demasiado en dar el primer frame; copiándolo arranca enseguida (medido con el NAS
+  real). Copiar HEVC a fMP4 funciona tal cual, sin `-tag:v hvc1`.
+- No todo fallo de reproducción es de la app: "1917" del NAS tiene el contenedor dañado
+  a partir del minuto ~55 (`invalid as first byte of an EBML number` sobre los 3 GB) y
+  ahí fallan por igual Chromium, el transcode y ffmpeg. Antes de perseguir un bug,
+  correr `ffmpeg -ss N -i archivo -t 8 -f null -` sobre la zona sospechosa.

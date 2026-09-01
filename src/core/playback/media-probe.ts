@@ -17,6 +17,11 @@ function isSupportedAudio(codec: string): boolean {
   return SUPPORTED_AUDIO.has(codec) || codec.startsWith('pcm_')
 }
 
+/** Para decidir si, ante un fallo, basta con recodificar el audio y COPIAR el video. */
+export function isSupportedVideoCodec(codec: string): boolean {
+  return SUPPORTED_VIDEO.has(codec)
+}
+
 interface FfprobeStreamJson {
   index?: number
   codec_type?: string

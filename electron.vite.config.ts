@@ -39,6 +39,9 @@ export default defineConfig({
     resolve: {
       alias: {
         '@shared': resolve(__dirname, 'src/shared'),
+        // El motor de reproducción usa helpers puros de core (media-probe); el bundle
+        // móvil ya tenía este alias.
+        '@core': resolve(__dirname, 'src/core'),
         '@': resolve(__dirname, 'src/renderer/src')
       }
     },
