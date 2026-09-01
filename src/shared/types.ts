@@ -285,6 +285,25 @@ export interface ExternalPlayerInfo {
   path: string
 }
 
+/** Pista de audio o subtítulos del archivo, tal como la reporta el motor de reproducción. */
+export interface MediaTrack {
+  /** Id opaco del motor (índice de stream en desktop, id de libVLC en Android). */
+  id: string
+  kind: 'audio' | 'subtitle'
+  /** Texto listo para UI: "Español (AC3 5.1)", "Forzados", etc. */
+  label: string
+  /** Código de idioma tal cual viene del archivo (spa, es, en…), si lo trae. */
+  language?: string
+  codec?: string
+  /** true = se lista pero no se puede activar (p.ej. subtítulos PGS en desktop). */
+  unsupported?: boolean
+}
+
+export interface TrackSet {
+  audio: MediaTrack[]
+  subtitles: MediaTrack[]
+}
+
 // ---------------------------------------------------------------------------
 // Cola de reproducción (única, compartida entre ventanas, persistida en main)
 // ---------------------------------------------------------------------------

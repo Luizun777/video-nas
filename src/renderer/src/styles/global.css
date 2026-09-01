@@ -968,6 +968,11 @@ select:focus {
   background: #000;
 }
 
+/* Hueco del motor nativo (libVLC pinta detrás del WebView): solo captura taps. */
+.player-native-surface {
+  background: transparent;
+}
+
 .player-controls {
   position: absolute;
   inset: 0;

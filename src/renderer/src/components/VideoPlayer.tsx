@@ -1,24 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ChapterMarks, ExtraDetails, PlayTarget } from '@shared/types'
-import { videoStreamUrl } from '@shared/playback-url'
 import { posterSrc } from '@shared/media-src'
 import { THUMB_SIZE, tmdbImageUrl } from '@shared/tmdb-images'
 import { decideNextUp } from '@shared/next-up'
 import { displayTitle, queuedItems, tmdbIndex, useAppStore } from '@/store/app-store'
 import { MiniPlayerBar } from '@/components/MiniPlayerBar'
+import { createEngine } from '@/player/engine-registry'
+import { EngineSurface } from '@/player/EngineSurface'
 
 /** Antes de este umbral desde el final se ofrece lo que siga (episodio/cola/recomendación). */
 const NEXT_UP_THRESHOLD_SECONDS = 30
 const NEXT_UP_COUNTDOWN_SECONDS = 15
 const CONTROLS_HIDE_DELAY_MS = 3000
 const SEEK_STEP_SECONDS = 10
-const UNSUPPORTED_CHECK_INTERVAL_MS = 4000
-/** Strikes consecutivos con audio en 0 bytes antes de decidir "pista no soportada". */
-const SILENT_AUDIO_STRIKES = 2
-
-/** Cuenta acumulada de bytes de audio decodificados: Chromium-only, no estándar. */
-type VideoWithAudioByteCount = HTMLVideoElement & { webkitAudioDecodedByteCount?: number }
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
@@ -69,15 +64,15 @@ export function VideoPlayer({
   const queue = useAppStore((s) => s.queue)
   const navigate = useNavigate()
 
-  const videoRef = useRef<HTMLVideoElement>(null)
+  // El motor vive lo que vive el componente; cambiar de target es engine.load(), no
+  // recrearlo. Se destruye al desmontar (cerrar el player de verdad).
+  const [engine] = useState(() => createEngine())
   const containerRef = useRef<HTMLDivElement>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedRef = useRef(0)
-  const resumeAtRef = useRef<number | null>(null)
-  const unsupportedFiredRef = useRef(false)
-  const silentAudioStrikesRef = useRef(0)
-  const lastAudioCheckTimeRef = useRef(0)
   const handleErrorRef = useRef<() => void>(() => {})
+  const handleTimeUpdateRef = useRef<() => void>(() => {})
+  const handleEndedRef = useRef<() => void>(() => {})
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -166,65 +161,49 @@ export function VideoPlayer({
     }
   }, [itemId, effectiveRelPath, revealControls])
 
-  // Posición guardada del título actual, para reanudar al cargar el metadata.
+  // Carga en el motor. La posición de reanudación se resuelve ANTES de cargar para
+  // que cualquier motor (HTML o nativo) arranque directamente donde quedó.
   useEffect(() => {
-    lastSavedRef.current = 0
-    resumeAtRef.current = null
-    if (!window.api.getPlaybackProgress || (startAt && startAt > 0)) return
     let cancelled = false
-    void window.api.getPlaybackProgress().then((entries) => {
-      if (cancelled) return
-      const entry = entries.find((e) => e.key === `${itemId}::${effectiveRelPath}`)
-      if (entry && !entry.finished) resumeAtRef.current = entry.positionSec
-    })
+    lastSavedRef.current = 0
+    const doLoad = async (): Promise<void> => {
+      let at = startAt && startAt > 0 ? startAt : undefined
+      if (at === undefined && window.api.getPlaybackProgress) {
+        const entries = await window.api.getPlaybackProgress().catch(() => [])
+        const entry = entries.find((e) => e.key === `${itemId}::${effectiveRelPath}`)
+        if (entry && !entry.finished) at = entry.positionSec
+      }
+      if (!cancelled) engine.load({ itemId, relPath: effectiveRelPath, startAt: at })
+    }
+    void doLoad()
     return () => {
       cancelled = true
     }
-  }, [itemId, effectiveRelPath, startAt])
+  }, [engine, itemId, effectiveRelPath, startAt])
 
-  // Watchdog de pistas indecodificables que NO disparan onError: Chromium no falla el
-  // <video>, solo omite en silencio lo que no sabe decodificar.
-  //   - Video (p.ej. HEVC 4K 10-bit en tablets): con metadata cargada, un stream
-  //     decodificable ya reporta dimensiones; si tras unos segundos sigue en 0x0,
-  //     jamás habrá frames.
-  //   - Audio (p.ej. AC3/DTS, muy común en rips "Dual-Lat" — Chromium en Android no
-  //     trae esos decodificadores por licencias, a diferencia de macOS): el video se
-  //     ve perfecto pero webkitAudioDecodedByteCount se queda clavado en 0 mientras
-  //     avanza el tiempo. 2 strikes de ~4s dan margen a que el decodificador arranque
-  //     sin dejar al usuario escuchando silencio de más.
-  // Corre por intervalo (no timeupdate) para cubrir también el caso atascado en pausa.
+  // Eventos del motor → estado de la UI. Los handlers con lógica de negocio (guardar
+  // progreso, countdown, fallback) se leen por ref para no re-suscribir en cada render.
   useEffect(() => {
-    unsupportedFiredRef.current = false
-    silentAudioStrikesRef.current = 0
-    lastAudioCheckTimeRef.current = 0
+    const offs = [
+      engine.on('play', () => setPlaying(true)),
+      engine.on('pause', () => {
+        setPlaying(false)
+        const state = engine.getState()
+        if (state.duration) saveProgress(state.currentTime, state.duration)
+      }),
+      engine.on('durationchange', () => setDuration(engine.getState().duration)),
+      engine.on('timeupdate', () => handleTimeUpdateRef.current()),
+      engine.on('ended', () => handleEndedRef.current())
+    ]
+    const offError = engine.onError(() => handleErrorRef.current())
+    return () => {
+      offs.forEach((off) => off())
+      offError()
+    }
+  }, [engine, saveProgress])
 
-    const timer = setInterval(() => {
-      const video = videoRef.current as VideoWithAudioByteCount | null
-      if (!video || unsupportedFiredRef.current) return
-
-      if (video.readyState >= 1 && video.videoWidth === 0 && !video.error) {
-        unsupportedFiredRef.current = true
-        clearInterval(timer)
-        handleErrorRef.current()
-        return
-      }
-
-      if (video.paused || video.videoWidth === 0) return
-      const audioBytes = video.webkitAudioDecodedByteCount
-      if (audioBytes === undefined) return // API no disponible en este WebView
-
-      const advancing = video.currentTime > lastAudioCheckTimeRef.current + 1
-      lastAudioCheckTimeRef.current = video.currentTime
-      silentAudioStrikesRef.current = advancing && audioBytes === 0 ? silentAudioStrikesRef.current + 1 : 0
-
-      if (silentAudioStrikesRef.current >= SILENT_AUDIO_STRIKES) {
-        unsupportedFiredRef.current = true
-        clearInterval(timer)
-        handleErrorRef.current()
-      }
-    }, UNSUPPORTED_CHECK_INTERVAL_MS)
-    return () => clearInterval(timer)
-  }, [itemId, effectiveRelPath])
+  // El motor muere con el componente (cerrar el player); minimizar no desmonta.
+  useEffect(() => () => engine.destroy(), [engine])
 
   // Reparto/relacionadas de películas: para la recomendación de secuela al terminar.
   useEffect(() => {
@@ -246,13 +225,13 @@ export function VideoPlayer({
   }, [item?.id, item?.tmdb?.id, item?.kind, item?.extraDetails])
 
   const handleClose = useCallback(() => {
-    const video = videoRef.current
-    if (video && video.duration) saveProgress(video.currentTime, video.duration)
+    const state = engine.getState()
+    if (state.duration) saveProgress(state.currentTime, state.duration)
     // No dejar una ventana PiP flotante huérfana ni la app atrapada en fullscreen.
     if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {})
     if (document.fullscreenElement) void document.exitFullscreen()
     onClose()
-  }, [onClose, saveProgress])
+  }, [engine, onClose, saveProgress])
 
   // Minimizar no debe dejar una ventana PiP huérfana ni la app atrapada en fullscreen.
   const handleMinimize = useCallback(() => {
@@ -293,17 +272,16 @@ export function VideoPlayer({
   }, [nextUpState, advance])
 
   const togglePlay = useCallback(() => {
-    const video = videoRef.current
-    if (!video) return
-    if (video.paused) void video.play()
-    else video.pause()
-  }, [])
+    if (engine.getState().playing) engine.pause()
+    else engine.play()
+  }, [engine])
 
-  const seekBy = useCallback((deltaSeconds: number) => {
-    const video = videoRef.current
-    if (!video) return
-    video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + deltaSeconds))
-  }, [])
+  const seekBy = useCallback(
+    (deltaSeconds: number) => {
+      engine.seekBy(deltaSeconds)
+    },
+    [engine]
+  )
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen()
@@ -311,7 +289,7 @@ export function VideoPlayer({
   }, [])
 
   const togglePip = useCallback(async () => {
-    const video = videoRef.current
+    const video = engine.videoElement
     if (!video) return
     try {
       if (document.pictureInPictureElement) await document.exitPictureInPicture()
@@ -319,7 +297,7 @@ export function VideoPlayer({
     } catch {
       pushToast('No se pudo activar Picture in Picture con este video.', 'error')
     }
-  }, [pushToast])
+  }, [engine, pushToast])
 
   useEffect(() => {
     const onFullscreenChange = (): void => setIsFullscreen(Boolean(document.fullscreenElement))
@@ -327,9 +305,10 @@ export function VideoPlayer({
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
   }, [])
 
-  // Estado PiP sincronizado con los eventos nativos del video.
+  // Estado PiP sincronizado con los eventos nativos del video. El elemento es siempre
+  // el mismo nodo (EngineSurface no lo remonta), así que basta suscribirse una vez.
   useEffect(() => {
-    const video = videoRef.current
+    const video = engine.videoElement
     if (!video) return
     const onEnter = (): void => setIsPip(true)
     const onLeave = (): void => setIsPip(false)
@@ -339,7 +318,7 @@ export function VideoPlayer({
       video.removeEventListener('enterpictureinpicture', onEnter)
       video.removeEventListener('leavepictureinpicture', onLeave)
     }
-  }, [itemId, effectiveRelPath])
+  }, [engine])
 
   // Atajos de teclado. En modo mini NO se registran: el usuario está navegando el
   // catálogo (espacio/flechas/Escape deben quedarse para la app, no para el player).
@@ -386,8 +365,13 @@ export function VideoPlayer({
   }, [view, togglePlay, seekBy, toggleFullscreen, handleClose, handleMinimize, onMinimize, revealControls])
 
   useEffect(() => {
-    if (videoRef.current) videoRef.current.volume = volume
-  }, [volume])
+    engine.setVolume(volume)
+  }, [engine, volume])
+
+  // El motor nativo oculta su superficie en mini (el audio sigue); el HTML no hace nada.
+  useEffect(() => {
+    engine.setViewMode(view)
+  }, [engine, view])
 
   useEffect(() => {
     return () => {
@@ -411,26 +395,27 @@ export function VideoPlayer({
   const countdownActive = decision.kind === 'episode' ? autoNextEpisodeEnabled : decision.kind === 'queue'
 
   const handleTimeUpdate = (): void => {
-    const video = videoRef.current
-    if (!video) return
-    setCurrentTime(video.currentTime)
+    const state = engine.getState()
+    setCurrentTime(state.currentTime)
 
-    if (Math.abs(video.currentTime - lastSavedRef.current) >= 10) {
-      lastSavedRef.current = video.currentTime
-      saveProgress(video.currentTime, video.duration || 0)
+    if (Math.abs(state.currentTime - lastSavedRef.current) >= 10) {
+      lastSavedRef.current = state.currentTime
+      saveProgress(state.currentTime, state.duration)
     }
 
-    if (countdownActive && nextUpState === 'hidden' && video.currentTime >= nextUpTrigger) {
+    if (countdownActive && nextUpState === 'hidden' && state.currentTime >= nextUpTrigger) {
       setCountdown(NEXT_UP_COUNTDOWN_SECONDS)
       setNextUpState('countdown')
     }
   }
+  handleTimeUpdateRef.current = handleTimeUpdate
 
   const handleEnded = (): void => {
-    const video = videoRef.current
-    if (video?.duration) saveProgress(video.duration, video.duration)
+    const state = engine.getState()
+    if (state.duration) saveProgress(state.duration, state.duration)
     if (countdownActive && nextUpState !== 'cancelled') void advance()
   }
+  handleEndedRef.current = handleEnded
 
   /**
    * Chromium no decodifica todos los códecs (DivX/MPEG-2 sobre todo). En vez de dejar una
@@ -446,24 +431,21 @@ export function VideoPlayer({
   handleErrorRef.current = handleError
 
   const handleSeekClick = (event: React.MouseEvent<HTMLDivElement>): void => {
-    const video = videoRef.current
-    if (!video || !video.duration) return
+    const state = engine.getState()
+    if (!state.duration) return
     const rect = event.currentTarget.getBoundingClientRect()
     const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
-    video.currentTime = ratio * video.duration
+    engine.seekTo(ratio * state.duration)
   }
 
   const handleSkipIntro = (): void => {
-    const video = videoRef.current
-    if (!video || introEnd === undefined) return
-    video.currentTime = introEnd
+    if (introEnd === undefined) return
+    engine.seekTo(introEnd)
     setSkippedIntro(true)
   }
 
   const handleMarkIntro = (): void => {
-    const video = videoRef.current
-    if (!video) return
-    const seconds = Math.floor(video.currentTime)
+    const seconds = Math.floor(engine.getState().currentTime)
     void window.api.setIntroMark(item.id, seconds).then(() => {
       pushToast(`Fin del intro marcado en ${formatTime(seconds)}. Se usará en los demás episodios.`)
     })
@@ -494,35 +476,9 @@ export function VideoPlayer({
       onMouseMove={isMini || isCoarsePointer ? undefined : revealControls}
       onDoubleClick={isMini ? undefined : toggleFullscreen}
     >
-      <video
-        ref={videoRef}
-        className="player-video"
-        src={videoStreamUrl(itemId, effectiveRelPath)}
-        autoPlay
+      <EngineSurface
+        engine={engine}
         onClick={isMini ? onExpand : isCoarsePointer ? handleVideoTap : togglePlay}
-        onPlay={() => setPlaying(true)}
-        onPause={() => {
-          setPlaying(false)
-          const video = videoRef.current
-          if (video && video.duration) saveProgress(video.currentTime, video.duration)
-        }}
-        onLoadedMetadata={(e) => {
-          setDuration(e.currentTarget.duration)
-          // Separar/volver conservan la posición; los wrappers no pasan startAt en auto-avance.
-          if (startAt && startAt > 0 && startAt < e.currentTarget.duration) {
-            e.currentTarget.currentTime = startAt
-          } else if (
-            resumeAtRef.current &&
-            resumeAtRef.current > 0 &&
-            resumeAtRef.current < e.currentTarget.duration - 10
-          ) {
-            // Continuar viendo (Android): reanudar donde quedó.
-            e.currentTarget.currentTime = resumeAtRef.current
-          }
-        }}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={handleEnded}
-        onError={handleError}
       />
 
       {!isMini && showSkipIntro && (
@@ -642,7 +598,7 @@ export function VideoPlayer({
             {onDetach && (
               <button
                 className="btn btn-ghost btn-sm"
-                onClick={() => onDetach(videoRef.current?.currentTime ?? 0)}
+                onClick={() => onDetach(engine.getState().currentTime)}
                 title="Sigue viendo en una ventana aparte mientras navegas el catálogo"
               >
                 ⧉ Separar
@@ -651,7 +607,7 @@ export function VideoPlayer({
             {onReattach && (
               <button
                 className="btn btn-ghost btn-sm"
-                onClick={() => onReattach(videoRef.current?.currentTime ?? 0)}
+                onClick={() => onReattach(engine.getState().currentTime)}
               >
                 ⇤ Volver a la app
               </button>
@@ -723,14 +679,16 @@ export function VideoPlayer({
               onChange={(e) => setVolume(Number(e.target.value))}
               aria-label="Volumen"
             />
-            {document.pictureInPictureEnabled && (
+            {engine.caps.pip && document.pictureInPictureEnabled && (
               <button className="btn btn-ghost btn-sm" onClick={() => void togglePip()}>
                 {isPip ? 'Salir de PiP' : 'PiP'}
               </button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={toggleFullscreen}>
-              {isFullscreen ? 'Salir' : 'Pantalla completa'}
-            </button>
+            {engine.caps.htmlFullscreen && (
+              <button className="btn btn-ghost btn-sm" onClick={toggleFullscreen}>
+                {isFullscreen ? 'Salir' : 'Pantalla completa'}
+              </button>
+            )}
           </div>
         </div>
       </div>
