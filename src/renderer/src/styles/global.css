@@ -973,6 +973,81 @@ select:focus {
   background: transparent;
 }
 
+/* Modo player nativo a pantalla completa (Android/libVLC): el video vive DETRÁS del
+   WebView, así que todo píxel que cubra el viewport debe quedar transparente. El
+   catálogo se oculta (visibility) para que sus fondos/portadas no tapen el video;
+   el overlay del player (los controles) es lo único que se sigue pintando. */
+body.native-video-full,
+body.native-video-full .app {
+  background: transparent !important;
+}
+
+body.native-video-full .app > :not(.player-overlay) {
+  visibility: hidden;
+}
+
+body.native-video-full .player-overlay {
+  background: transparent;
+}
+
+/* Portada en la mini-barra cuando el motor es nativo (la superficie está oculta). */
+.mini-native-poster {
+  object-fit: cover;
+}
+
+/* --------------------------------------------- menú de audio/subtítulos -- */
+
+.track-menu {
+  position: relative;
+}
+
+.track-menu-open {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.track-menu-pop {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  display: flex;
+  gap: 24px;
+  padding: 16px 20px;
+  background: rgba(20, 20, 27, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+  max-height: 50vh;
+  overflow-y: auto;
+  white-space: nowrap;
+}
+
+.track-menu-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.track-menu-heading {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.track-menu-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.track-menu-option input[disabled] + span {
+  color: var(--text-faint);
+}
+
 .player-controls {
   position: absolute;
   inset: 0;

@@ -6,8 +6,10 @@ import { THUMB_SIZE, tmdbImageUrl } from '@shared/tmdb-images'
 import { decideNextUp } from '@shared/next-up'
 import { displayTitle, queuedItems, tmdbIndex, useAppStore } from '@/store/app-store'
 import { MiniPlayerBar } from '@/components/MiniPlayerBar'
+import { TrackMenu } from '@/components/TrackMenu'
 import { createEngine } from '@/player/engine-registry'
 import { EngineSurface } from '@/player/EngineSurface'
+import type { EngineError } from '@/player/engine'
 
 /** Antes de este umbral desde el final se ofrece lo que siga (episodio/cola/recomendación). */
 const NEXT_UP_THRESHOLD_SECONDS = 30
@@ -70,7 +72,7 @@ export function VideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedRef = useRef(0)
-  const handleErrorRef = useRef<() => void>(() => {})
+  const handleErrorRef = useRef<(reason: EngineError['reason']) => void>(() => {})
   const handleTimeUpdateRef = useRef<() => void>(() => {})
   const handleEndedRef = useRef<() => void>(() => {})
 
@@ -195,7 +197,7 @@ export function VideoPlayer({
       engine.on('timeupdate', () => handleTimeUpdateRef.current()),
       engine.on('ended', () => handleEndedRef.current())
     ]
-    const offError = engine.onError(() => handleErrorRef.current())
+    const offError = engine.onError((error) => handleErrorRef.current(error.reason))
     return () => {
       offs.forEach((off) => off())
       offError()
@@ -418,15 +420,21 @@ export function VideoPlayer({
   handleEndedRef.current = handleEnded
 
   /**
-   * Chromium no decodifica todos los códecs (DivX/MPEG-2 sobre todo). En vez de dejar una
-   * pantalla negra, se abre el archivo en el reproductor externo sin preguntar nada.
+   * 'codec' (motor HTML: Chromium no decodifica DivX/MPEG-2, o el watchdog detectó
+   * pista muda): se abre en el reproductor externo sin dejar pantalla negra.
+   * Cualquier otro motivo (motor nativo: red/stream) no se manda al externo — libVLC
+   * ya decodifica todo, así que el externo fallaría igual.
    */
-  const handleError = (): void => {
+  const handleError = (reason: EngineError['reason']): void => {
     handleClose()
-    void playExternal(itemId, effectiveRelPath)
-    pushToast(
-      'Este formato no es compatible con el reproductor integrado. Se abrió en tu reproductor externo.'
-    )
+    if (reason === 'codec') {
+      void playExternal(itemId, effectiveRelPath)
+      pushToast(
+        'Este formato no es compatible con el reproductor integrado. Se abrió en tu reproductor externo.'
+      )
+    } else {
+      pushToast('La reproducción falló. Revisa la conexión con el NAS.', 'error')
+    }
   }
   handleErrorRef.current = handleError
 
@@ -478,6 +486,8 @@ export function VideoPlayer({
     >
       <EngineSurface
         engine={engine}
+        view={view}
+        posterUrl={posterSrc(item)}
         onClick={isMini ? onExpand : isCoarsePointer ? handleVideoTap : togglePlay}
       />
 
@@ -669,6 +679,7 @@ export function VideoPlayer({
                 Marcar fin del intro
               </button>
             )}
+            <TrackMenu engine={engine} />
             <input
               className="player-volume"
               type="range"

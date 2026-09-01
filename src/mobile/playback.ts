@@ -40,6 +40,15 @@ export function resolveStreamUrl(itemId: string, relPath?: string): string {
   return `http://127.0.0.1:${bridge.port}/v/${bridge.token}?${params.toString()}`
 }
 
+/** URL del puente para CUALQUIER archivo del share (p.ej. un .srt junto al video). */
+export function bridgeFileUrl(serverId: string, relPath: string): string | null {
+  if (!bridge) return null
+  const params = new URLSearchParams()
+  params.set('serverId', serverId)
+  params.set('path', relPath)
+  return `http://127.0.0.1:${bridge.port}/v/${bridge.token}?${params.toString()}`
+}
+
 /** Capítulos MKV: los primeros 4 MiB via fetch+Range contra el propio puente. */
 export function chapterMarksFor(itemId: string, relPath?: string): Promise<ChapterMarks> {
   const item = getItem(itemId)

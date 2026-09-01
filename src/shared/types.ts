@@ -297,11 +297,22 @@ export interface MediaTrack {
   codec?: string
   /** true = se lista pero no se puede activar (p.ej. subtítulos PGS en desktop). */
   unsupported?: boolean
+  /** true = es la pista activa ahora mismo (para los radios del menú). */
+  selected?: boolean
 }
 
 export interface TrackSet {
   audio: MediaTrack[]
   subtitles: MediaTrack[]
+}
+
+/** Subtítulo externo (.srt/.ass) encontrado junto al video al momento de reproducir. */
+export interface SubtitleFileInfo {
+  name: string
+  relPath: string
+  /** URL ya servible por la plataforma (puente HTTP en Android, videofile:// en desktop). */
+  url: string
+  language?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +429,8 @@ export interface IpcApi {
 
   getChapterMarks(itemId: string, relPath?: string): Promise<ChapterMarks>
   setIntroMark(itemId: string, seconds: number): Promise<LibraryItem | null>
+  /** Subtítulos externos junto al video (opcional: Android desde F13, desktop desde F14). */
+  listSubtitleFiles?(itemId: string, relPath?: string): Promise<SubtitleFileInfo[]>
   listExternalPlayers(): Promise<ExternalPlayerInfo[]>
   chooseExternalPlayer(): Promise<string | null>
 

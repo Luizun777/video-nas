@@ -71,7 +71,11 @@ import { capacitorStoreIO } from './adapters/capacitor-store-io'
 import { createSmbFs } from './adapters/smb-fs-adapter'
 import { capacitorImageCache, imageCacheBaseUrl } from './adapters/capacitor-image-cache'
 import { capacitorDownloadTransfer } from './adapters/capacitor-download-transfer'
-import { chapterMarksFor, initBridge, playExternalTarget } from './playback'
+import { bridgeFileUrl, chapterMarksFor, initBridge, playExternalTarget } from './playback'
+import { pickTargetRelPath } from '@core/playback/resolve-target'
+import { findSubtitleCandidates } from '@core/playback/subtitle-candidates'
+import { registerEngineFactory } from '@/player/engine-registry'
+import { VlcNativeEngine } from './vlc-engine'
 
 // El "proceso main" de Android: mismo contrato IpcApi que el preload de Electron, pero
 // en el propio WebView. Cada handler es el espejo de su gemelo en src/main/ipc.ts.
@@ -148,6 +152,11 @@ export async function installMobileApi(): Promise<void> {
   initScanner(mobileScanEnv)
   await initDownloadManager(capacitorStoreIO, capacitorDownloadTransfer)
   await initBridge()
+
+  // Android reproduce SIEMPRE con libVLC embebido: decodifica lo que el WebView no
+  // (AC3/DTS, HEVC 10-bit, DivX) y hace innecesario el watchdog y el fallback
+  // automático a VLC externo (que sigue disponible como acción manual).
+  registerEngineFactory(() => new VlcNativeEngine())
 
   const cacheBase = await imageCacheBaseUrl()
   setMediaSrcResolver((cacheRelPath) => `${cacheBase}/${cacheRelPath}`)
@@ -312,6 +321,47 @@ export async function installMobileApi(): Promise<void> {
     revealInFinder: async () => ({ ok: false, error: 'No disponible en Android.' }),
 
     getChapterMarks: (itemId, relPath) => chapterMarksFor(itemId, relPath),
+
+    // Subtítulos externos junto al video (o en Subs/): se listan al reproducir, con
+    // URLs del puente para que libVLC los cargue como slaves.
+    listSubtitleFiles: async (itemId, relPath) => {
+      const item = getItem(itemId)
+      if (!item) return []
+      const target = pickTargetRelPath(item, relPath)
+      const slash = target.lastIndexOf('/')
+      const dir = slash >= 0 ? target.slice(0, slash) : ''
+      const videoFileName = slash >= 0 ? target.slice(slash + 1) : target
+      try {
+        const { entries } = await Nas.listDir({ serverId: item.serverId, path: dir })
+        const subsDirEntries: { dir: string; names: string[] }[] = []
+        for (const entry of entries) {
+          if (entry.dir && /^(subs|subtitles|subtitulos)$/i.test(entry.name)) {
+            const inner = await Nas.listDir({
+              serverId: item.serverId,
+              path: dir ? `${dir}/${entry.name}` : entry.name
+            })
+            subsDirEntries.push({
+              dir: entry.name,
+              names: inner.entries.filter((e) => !e.dir).map((e) => e.name)
+            })
+          }
+        }
+        const candidates = findSubtitleCandidates({
+          videoFileName,
+          dirEntries: entries.filter((e) => !e.dir).map((e) => e.name),
+          subsDirEntries
+        })
+        const result = []
+        for (const candidate of candidates) {
+          const fullRelPath = dir ? `${dir}/${candidate.relPath}` : candidate.relPath
+          const url = bridgeFileUrl(item.serverId, fullRelPath)
+          if (url) result.push({ ...candidate, relPath: fullRelPath, url })
+        }
+        return result
+      } catch {
+        return [] // NAS offline (copia local): sin subtítulos externos no pasa nada.
+      }
+    },
 
     setIntroMark: async (itemId, seconds) => {
       const item = getItem(itemId)

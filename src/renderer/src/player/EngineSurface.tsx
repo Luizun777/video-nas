@@ -4,6 +4,9 @@ import type { PlaybackEngine } from './engine'
 interface EngineSurfaceProps {
   engine: PlaybackEngine
   onClick?: () => void
+  /** 'mini' + motor nativo: la superficie no se ve, así que se muestra la portada. */
+  view?: 'full' | 'mini'
+  posterUrl?: string | null
 }
 
 /**
@@ -13,7 +16,12 @@ interface EngineSurfaceProps {
  * El elemento debe ser SIEMPRE el mismo nodo entre cambios de target y de vista
  * full/mini: si React lo remonta, la reproducción se reinicia.
  */
-export function EngineSurface({ engine, onClick }: EngineSurfaceProps): React.JSX.Element {
+export function EngineSurface({
+  engine,
+  onClick,
+  view = 'full',
+  posterUrl
+}: EngineSurfaceProps): React.JSX.Element {
   const ref = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
@@ -22,6 +30,10 @@ export function EngineSurface({ engine, onClick }: EngineSurfaceProps): React.JS
   }, [engine])
 
   if (!engine.caps.rendersVideoInDom) {
+    // El motor nativo sigue sonando en mini; aquí solo cambia qué se ve en la barra.
+    if (view === 'mini' && posterUrl) {
+      return <img className="player-video mini-native-poster" src={posterUrl} onClick={onClick} alt="" />
+    }
     return <div className="player-video player-native-surface" onClick={onClick} />
   }
 
