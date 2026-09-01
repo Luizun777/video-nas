@@ -169,6 +169,9 @@ export class VlcNativeEngine implements PlaybackEngine {
         if (!this.state.playing) {
           this.state.playing = true
           this.emit('play')
+          // Al arrancar, libVLC aún no reporta qué pista eligió: sin este refresco el
+          // menú sale con todos los radios en blanco.
+          this.scheduleTracksRefresh()
         }
         break
       case 'paused':
