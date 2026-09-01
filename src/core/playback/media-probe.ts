@@ -7,11 +7,14 @@ import type { MediaProbe, PlaybackPlan, ProbeStream } from '@shared/types'
 const SUPPORTED_VIDEO = new Set(['h264', 'hevc', 'vp8', 'vp9', 'av1'])
 
 /**
- * Audio que sí suena en el <video> de macOS. AC3/EAC3 van incluidos a propósito:
- * a diferencia de Android, macOS le presta sus decodificadores al sistema
- * (verificado con los rips Dual-Lat reales — ver CLAUDE.md).
+ * Audio que sí suena en el <video> del renderer.
+ * AC3/EAC3 y DTS quedan FUERA: Chromium no trae esos decodificadores por licencias, y
+ * tampoco los toma prestados del sistema en macOS (medido con "Los Simpson" del NAS
+ * real, 4 pistas AC3: el video se ve pero webkitAudioDecodedByteCount se queda en 0).
+ * Al no estar en la lista, el plan cae a transcode copiando el video: solo se
+ * recodifica el audio a AAC, que es barato.
  */
-const SUPPORTED_AUDIO = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac', 'ac3', 'eac3'])
+const SUPPORTED_AUDIO = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac'])
 
 function isSupportedAudio(codec: string): boolean {
   return SUPPORTED_AUDIO.has(codec) || codec.startsWith('pcm_')

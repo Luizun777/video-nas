@@ -76,13 +76,19 @@ describe('parseFfprobeJson', () => {
 })
 
 describe('decidePlaybackPlan', () => {
-  it('H264+AAC y HEVC+AC3 van directo (macOS aporta AC3)', () => {
+  it('H264+AAC y HEVC+MP3 van directo', () => {
     expect(decidePlaybackPlan(parseFfprobeJson(ffprobeJson([H264, AAC_ES])))).toMatchObject({
       mode: 'direct'
     })
-    expect(decidePlaybackPlan(parseFfprobeJson(ffprobeJson([HEVC, AC3_LAT])))).toMatchObject({
+    expect(decidePlaybackPlan(parseFfprobeJson(ffprobeJson([HEVC, MP3])))).toMatchObject({
       mode: 'direct'
     })
+  })
+
+  it('AC3 copia el video y recodifica solo el audio (Chromium no decodifica AC3)', () => {
+    const plan = decidePlaybackPlan(parseFfprobeJson(ffprobeJson([HEVC, AC3_LAT])))
+    expect(plan).toMatchObject({ mode: 'transcode', videoCopy: true })
+    expect(plan.reason).toContain('ac3')
   })
 
   it('DivX y MPEG-2 transcodifican el video completo', () => {

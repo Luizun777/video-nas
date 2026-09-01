@@ -188,10 +188,13 @@ tests/         módulos puros de core (corren sin Electron ni Android)
   - Video indecodificable (HEVC 4K 10-bit en la Redmi Pad SE): audio avanza con pantalla
     negra y 0 frames decodificados.
   - **Audio indecodificable (AC3/DTS — MUY común en rips "Dual-Lat", confirmado con
-    ffprobe: 4 pistas AC3 en "Los Simpson", ninguna AAC)**: Chromium en Android no trae
-    esos decodificadores por licencias (a diferencia de macOS, donde el sistema sí los
-    aporta) y simplemente omite la pista en silencio — el video se ve perfecto pero sin
-    sonido, sin ningún error. La señal confiable es `video.webkitAudioDecodedByteCount`
+    ffprobe: 4 pistas AC3 en "Los Simpson", ninguna AAC)**: Chromium no trae esos
+    decodificadores por licencias **ni en Android ni en macOS** (medido en el propio
+    Electron: el video se ve y `webkitAudioDecodedByteCount` se queda en 0 diez
+    segundos seguidos). Antes se creía que macOS los aportaba: es FALSO, y por eso
+    `media-probe.ts` los deja fuera de la whitelist y manda esos archivos a transcode
+    copiando el video. Simplemente omite la pista en silencio — el video se ve
+    perfecto pero sin sonido, sin ningún error. La señal confiable es `video.webkitAudioDecodedByteCount`
     (no estándar, Chromium-only): con codec soportado sube con cada frame decodificado
     (incluso en silencio digital real); con AC3/DTS se queda clavado en 0 para siempre
     aunque el video avance. Distinguir "no hay audio" es imposible sin esto — `audioTracks`
