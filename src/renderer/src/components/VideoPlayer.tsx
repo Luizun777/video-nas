@@ -636,6 +636,20 @@ export function VideoPlayer({
             <button className="btn btn-ghost btn-sm" onClick={() => seekBy(SEEK_STEP_SECONDS)}>
               10s ↻
             </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => void advance()}
+              disabled={decision.kind === 'none'}
+              title={
+                decision.kind === 'episode'
+                  ? `Siguiente episodio: T${decision.episode.season} · E${decision.episode.episode}`
+                  : decision.kind === 'queue'
+                    ? `Siguiente de tu cola: ${displayTitle(decision.item)}`
+                    : 'No hay nada después: ni episodio siguiente ni cola'
+              }
+            >
+              ⏭ Siguiente
+            </button>
             <span className="player-time">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
