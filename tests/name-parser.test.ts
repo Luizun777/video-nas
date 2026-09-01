@@ -162,8 +162,15 @@ describe('inferSeasonFromFolder', () => {
     expect(inferSeasonFromFolder(folder)).toBe(expected)
   })
 
-  it('carpeta sin dígitos', () => {
-    expect(inferSeasonFromFolder('Extras')).toBeNull()
+  it('las carpetas de material aparte son la temporada 0 (especiales)', () => {
+    // Sin esto, un OVA con "Ep10" chocaba con el episodio 10 de la serie.
+    expect(inferSeasonFromFolder('Extras')).toBe(0)
+    expect(inferSeasonFromFolder('OVA')).toBe(0)
+    expect(inferSeasonFromFolder('Especiales')).toBe(0)
+  })
+
+  it('carpeta sin relación devuelve null', () => {
+    expect(inferSeasonFromFolder('Audio latino')).toBeNull()
   })
 })
 

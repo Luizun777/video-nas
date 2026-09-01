@@ -388,14 +388,50 @@ export interface EpisodeNumbers {
 }
 
 const SXXEYY_RE = /\bs(\d{1,2})[\s._-]?e(\d{1,3})\b/i
-const NXNN_RE = /\b(\d{1,2})x(\d{2,3})\b/i
+// Sin \b inicial a propósito: en "big4x01.mp4" la frontera no existe (letra pegada al
+// dígito) y la serie entera acababa numerada por el respaldo de dígitos finales.
+const NXNN_RE = /(?:^|[^\dx])(\d{1,2})x(\d{2,3})(?!\d)/i
 const SEASON_FOLDER_RE = /^(?:season|temporada|temp\.?|seas\.?|s|t)[\s._-]?(\d{1,2})$/i
 const TRAILING_DIGITS_RE = /(\d{1,2})\s*$/
-const EPISODE_HINT_RE = /(?:^|[\s._-])(?:e|ep|episodio|episode|cap|capitulo|capítulo)[\s._-]?(\d{1,3})\b/i
+// El límite final es (?!\d) y no \b: con \b, "_Ep03_" no casa porque "_" cuenta como
+// carácter de palabra. Marcadores sueltos incluidos: "c1" (capítulo) y "#1".
+const EPISODE_HINT_RE =
+  /(?:^|[\s._-])(?:episodios?|episodes?|epi|ep|cap[ií]tulos?|cap|[ec#])[\s._-]?(\d{1,3})(?!\d)/i
+
+/**
+ * Número suelto delimitado por separadores: "Ranma ½ - 002 - Título",
+ * "Evangelion 01 - Título", "01 - Sakura…", "13. Sabrina…", "…_Lain_07_(…)".
+ * Al exigir separador (o fin) DESPUÉS del número, se descartan solos los años
+ * ("2005"), las resoluciones ("1080p") y los códecs ("264").
+ */
+const STANDALONE_NUMBER_RE = /(?:^|[\s._\-–—])(\d{1,3})(?=[\s._\-–—]|$)/g
+
+/**
+ * Palabras que convierten al número siguiente en OTRA cosa: "temporada 5 - 01" es el
+ * episodio 1, no el 5, y "…parte 1" es una parte del título, no un episodio.
+ */
+const NOT_EPISODE_BEFORE_RE = /\b(?:temporadas?|seasons?|temp|partes?|parts?|cd|discos?|disc|vol|volumen|[ts])[\s._-]*$/i
+
+/** Primer número suelto que no venga precedido por "temporada", "parte", etc. */
+function findStandaloneEpisode(base: string): number | null {
+  STANDALONE_NUMBER_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = STANDALONE_NUMBER_RE.exec(base)) !== null) {
+    if (NOT_EPISODE_BEFORE_RE.test(base.slice(0, match.index))) continue
+    return Number(match[1])
+  }
+  return null
+}
 
 /** Deduce el número de temporada del nombre de una subcarpeta ("Temporada 2", "TBBT1"). */
+/** Carpetas de material aparte: se les da la temporada 0, la convención de "especiales". */
+const SPECIALS_FOLDER_RE = /^(?:ova|ovas|oav|especiales?|specials?|extras?|bonus)$/i
+
 export function inferSeasonFromFolder(folderName: string): number | null {
-  const named = folderName.trim().match(SEASON_FOLDER_RE)
+  const trimmed = folderName.trim()
+  if (SPECIALS_FOLDER_RE.test(trimmed)) return 0
+
+  const named = trimmed.match(SEASON_FOLDER_RE)
   if (named) return Number(named[1])
   // Nombres arbitrarios que terminan en dígitos: TBBT1, TBBT2
   const trailing = folderName.trim().match(TRAILING_DIGITS_RE)
@@ -428,6 +464,12 @@ export function parseEpisode(fileName: string, subfolderChain: string[] = []): E
 
   const hinted = base.match(EPISODE_HINT_RE)
   if (hinted) return { season: season ?? 1, episode: Number(hinted[1]) }
+
+  // Antes del respaldo de dígitos finales a propósito: en "Ranma ½ - 155 - La guerra
+  // de animadoras parte 1" lo correcto es 155, no el "1" de "parte 1" (ese respaldo
+  // numeraba dos archivos como episodios 1 y 2 y descolocaba la serie entera).
+  const standalone = findStandaloneEpisode(base)
+  if (standalone !== null) return { season: season ?? 1, episode: standalone }
 
   const trailing = base.match(/(\d{1,3})\s*$/)
   if (trailing) return { season: season ?? 1, episode: Number(trailing[1]) }

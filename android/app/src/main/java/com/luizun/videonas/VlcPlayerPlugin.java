@@ -61,8 +61,10 @@ public class VlcPlayerPlugin extends Plugin {
             call.reject("Falta la URL del stream.");
             return;
         }
-        long startAtMs = call.getLong("startAtMs", 0L);
-        ensureManager().open(url, startAtMs);
+        // getDouble y no getLong: los números de JS llegan como Double y getLong puede
+        // caer al valor por defecto — con 0 el reproductor "salta" al principio.
+        double startAtMs = call.getDouble("startAtMs", 0.0);
+        ensureManager().open(url, (long) startAtMs);
         call.resolve(new JSObject().put("ok", true));
     }
 
@@ -80,7 +82,9 @@ public class VlcPlayerPlugin extends Plugin {
 
     @PluginMethod
     public void seek(PluginCall call) {
-        ensureManager().seekTo(call.getLong("timeMs", 0L));
+        double timeMs = call.getDouble("timeMs", 0.0);
+        android.util.Log.i("VlcPlayer", "seek -> " + (long) timeMs + " ms");
+        ensureManager().seekTo((long) timeMs);
         call.resolve();
     }
 
