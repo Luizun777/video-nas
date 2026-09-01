@@ -12,6 +12,22 @@ export function createSmbFs(serverId: string): FsAdapter {
     async readDir(relPath) {
       const { entries } = await Nas.listDir({ serverId, path: relPath })
       return entries.map((entry) => ({ ...entry, name: entry.name.normalize('NFC') }))
+    },
+
+    async readFile(relPath) {
+      const { data } = await Nas.readNasFile({ serverId, path: relPath })
+      if (data === undefined || data === null) return null
+      const binary = atob(data)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      return bytes
+    },
+
+    async writeFile(relPath, data) {
+      let binary = ''
+      for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i])
+      const { ok } = await Nas.writeNasFile({ serverId, path: relPath, data: btoa(binary) })
+      if (!ok) throw new Error('No se pudo escribir en el share.')
     }
   }
 }

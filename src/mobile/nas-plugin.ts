@@ -39,6 +39,11 @@ export interface NasPluginApi {
 
   statFile(options: { serverId: string; path: string }): Promise<{ exists: boolean; dir: boolean; size: number }>
 
+  /** Archivo PEQUEÑO del share en base64 (metadata compartida); data ausente = no existe. */
+  readNasFile(options: { serverId: string; path: string }): Promise<{ data?: string }>
+  /** Escritura atómica en el share (tmp + rename, crea carpetas). data en base64. */
+  writeNasFile(options: { serverId: string; path: string; data: string }): Promise<{ ok: boolean }>
+
   /** Puerto efímero del puente HTTP local y token de sesión (SecureRandom, por proceso). */
   getBridgeInfo(): Promise<{ port: number; token: string }>
 

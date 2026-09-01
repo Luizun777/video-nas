@@ -174,6 +174,47 @@ public class NasPlugin extends Plugin {
         });
     }
 
+    @PluginMethod
+    public void readNasFile(PluginCall call) {
+        String serverId = call.getString("serverId");
+        String path = call.getString("path");
+        if (serverId == null || path == null) {
+            call.reject("Faltan serverId/path");
+            return;
+        }
+        ioPool.execute(() -> {
+            try {
+                byte[] data = manager.readFileFully(serverId, path);
+                JSObject result = new JSObject();
+                // data ausente = el archivo no existe (el TS lo trata como null).
+                if (data != null) result.put("data", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP));
+                call.resolve(result);
+            } catch (IOException e) {
+                call.reject(e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void writeNasFile(PluginCall call) {
+        String serverId = call.getString("serverId");
+        String path = call.getString("path");
+        String data = call.getString("data");
+        if (serverId == null || path == null || data == null) {
+            call.reject("Faltan serverId/path/data");
+            return;
+        }
+        ioPool.execute(() -> {
+            try {
+                byte[] bytes = android.util.Base64.decode(data, android.util.Base64.NO_WRAP);
+                manager.writeFileAtomic(serverId, path, bytes);
+                call.resolve(new JSObject().put("ok", true));
+            } catch (IOException | IllegalArgumentException e) {
+                call.reject(e.getMessage());
+            }
+        });
+    }
+
     // --------------------------------------------------------------- puente --
 
     @PluginMethod

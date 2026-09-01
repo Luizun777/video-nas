@@ -26,6 +26,10 @@ export interface FsEntry {
  */
 export interface FsAdapter {
   readDir(relPath: string): Promise<FsEntry[]>
+  /** Contenido completo de un archivo PEQUEÑO (metadata compartida), o null si no existe. */
+  readFile(relPath: string): Promise<Uint8Array | null>
+  /** Escritura atómica en el share (tmp + rename), creando las carpetas padre. */
+  writeFile(relPath: string, data: Uint8Array): Promise<void>
 }
 
 export interface ImageCacheAdapter {

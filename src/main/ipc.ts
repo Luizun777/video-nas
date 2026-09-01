@@ -23,12 +23,13 @@ import type {
 } from '@shared/types'
 import { getConfig, saveConfig } from '@core/stores/config-store'
 import { flushLibrary, getItem, getLibrary, putItem, removeItems } from '@core/stores/library-store'
-import {
-  clearOverride as clearOverrideEntry,
-  flushOverrides,
-  setOverride
-} from '@core/stores/overrides-store'
 import { clearProgress, getAllProgress, setProgress } from '@core/stores/progress-store'
+import {
+  applyOverrideToItem,
+  clearOverrideToAuto,
+  initOverrideService
+} from '@core/metadata/override-service'
+import { trySyncServer } from '@core/metadata/shared-overrides-sync'
 import { discoverSmbServers } from './nas/discovery'
 import { resolveAbsolutePath } from './playback/resolve'
 import { readChapterMarks } from './playback/mkv-chapter-reader'
@@ -71,7 +72,6 @@ import {
   startScan
 } from '@core/scanner/scan-orchestrator'
 import { getExtraDetails as fetchExtraDetails, getTvSeasons, searchAsResults, testToken } from '@core/tmdb/client'
-import { identifyByTmdbId } from '@core/tmdb/identifier'
 import { desktopImageCache } from './tmdb/image-cache'
 
 const exec = promisify(execFile)
@@ -88,6 +88,12 @@ function emitLibrary(): void {
 
 
 export function registerIpc(): void {
+  initOverrideService({
+    images: desktopImageCache,
+    emitLibrary,
+    onOverrideChanged: trySyncServer
+  })
+
   // ---- Configuración -------------------------------------------------------
   ipcMain.handle(IPC.getConfig, (): AppConfig => getConfig())
 
@@ -137,51 +143,17 @@ export function registerIpc(): void {
     }
   )
 
+  // La lógica vive en core (override-service): la MISMA para Electron y Android.
   ipcMain.handle(
     IPC.applyOverride,
-    async (_e, itemId: string, override: MetadataOverride): Promise<LibraryItem | null> => {
-      const item = getItem(itemId)
-      if (!item) return null
-      setOverride(itemId, override)
-
-      let updated: LibraryItem
-      if (override.mode === 'file-only') {
-        updated = { ...item, identify: 'file-only', tmdb: null, posterCache: undefined, backdropCache: undefined }
-      } else {
-        const config = getConfig()
-        const outcome = await identifyByTmdbId(override.mediaType ?? item.kind, override.tmdbId!, {
-          token: config.tmdbBearerToken,
-          language: config.language,
-          images: desktopImageCache
-        })
-        updated = { ...item, ...outcome, tvDetails: null, extraDetails: null }
-      }
-
-      putItem(updated)
-      await Promise.all([flushLibrary(), flushOverrides()])
-      emitLibrary()
-      return updated
-    }
+    (_e, itemId: string, override: MetadataOverride): Promise<LibraryItem | null> =>
+      applyOverrideToItem(itemId, override)
   )
 
-  ipcMain.handle(IPC.clearOverride, async (_e, itemId: string): Promise<LibraryItem | null> => {
-    const item = getItem(itemId)
-    if (!item) return null
-    clearOverrideEntry(itemId)
-    const reset: LibraryItem = {
-      ...item,
-      identify: 'unidentified',
-      tmdb: null,
-      tvDetails: null,
-      extraDetails: null,
-      posterCache: undefined,
-      backdropCache: undefined
-    }
-    putItem(reset)
-    await Promise.all([flushLibrary(), flushOverrides()])
-    emitLibrary()
-    return reset
-  })
+  ipcMain.handle(
+    IPC.clearOverride,
+    (_e, itemId: string): Promise<LibraryItem | null> => clearOverrideToAuto(itemId)
+  )
 
   ipcMain.handle(IPC.getTvDetails, async (_e, itemId: string): Promise<LibraryItem | null> => {
     const item = getItem(itemId)

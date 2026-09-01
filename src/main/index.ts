@@ -17,6 +17,7 @@ import { nodeDownloadTransfer } from './adapters/node-download-transfer'
 import { registerVideoFileProtocol } from './playback/stream-protocol'
 import { stopTranscodeSession } from './playback/transcode-session'
 import { initScanner, refreshStatuses, startScan } from '@core/scanner/scan-orchestrator'
+import { initSharedOverridesSync } from '@core/metadata/shared-overrides-sync'
 import { desktopScanEnv } from './adapters/desktop-scan-env'
 import { cacheRoot, ensureCacheDirs } from './tmdb/image-cache'
 
@@ -86,6 +87,7 @@ void app.whenReady().then(async () => {
   await Promise.all([ensureCacheDirs(), initDownloadManager(nodeStoreIO, nodeDownloadTransfer)])
 
   initScanner(desktopScanEnv)
+  initSharedOverridesSync(desktopScanEnv)
   registerIpc()
   createMainWindow()
 

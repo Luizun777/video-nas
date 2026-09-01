@@ -20,12 +20,13 @@ import {
   putItem,
   removeItems
 } from '@core/stores/library-store'
+import { initOverridesStore } from '@core/stores/overrides-store'
 import {
-  clearOverride as clearOverrideEntry,
-  flushOverrides,
-  initOverridesStore,
-  setOverride
-} from '@core/stores/overrides-store'
+  applyOverrideToItem,
+  clearOverrideToAuto,
+  initOverrideService
+} from '@core/metadata/override-service'
+import { initSharedOverridesSync, trySyncServer } from '@core/metadata/shared-overrides-sync'
 import {
   addToQueue,
   clearQueue,
@@ -64,7 +65,6 @@ import {
   searchAsResults,
   testToken
 } from '@core/tmdb/client'
-import { identifyByTmdbId } from '@core/tmdb/identifier'
 import { Emitter } from './emitter'
 import { Nas } from './nas-plugin'
 import { capacitorStoreIO } from './adapters/capacitor-store-io'
@@ -150,6 +150,7 @@ export async function installMobileApi(): Promise<void> {
 
   await configurePlugin(config)
   initScanner(mobileScanEnv)
+  initSharedOverridesSync(mobileScanEnv)
   await initDownloadManager(capacitorStoreIO, capacitorDownloadTransfer)
   await initBridge()
 
@@ -171,6 +172,12 @@ export async function installMobileApi(): Promise<void> {
 
   const emitLibrary = (): void => emitter.emit('libraryChanged', snapshotLibrary())
   const broadcastQueue = (): void => emitter.emit('queue', snapshotQueue())
+
+  initOverrideService({
+    images: capacitorImageCache,
+    emitLibrary,
+    onOverrideChanged: trySyncServer
+  })
 
   onProgress((progress) => {
     emitter.emit('scanProgress', progress)
@@ -224,54 +231,9 @@ export async function installMobileApi(): Promise<void> {
       }
     },
 
-    applyOverride: async (itemId, override) => {
-      const item = getItem(itemId)
-      if (!item) return null
-      setOverride(itemId, override)
-
-      let updated: LibraryItem
-      if (override.mode === 'file-only') {
-        updated = {
-          ...item,
-          identify: 'file-only',
-          tmdb: null,
-          posterCache: undefined,
-          backdropCache: undefined
-        }
-      } else {
-        const current = getConfig()
-        const outcome = await identifyByTmdbId(override.mediaType ?? item.kind, override.tmdbId!, {
-          token: current.tmdbBearerToken,
-          language: current.language,
-          images: capacitorImageCache
-        })
-        updated = { ...item, ...outcome, tvDetails: null, extraDetails: null }
-      }
-
-      putItem(updated)
-      await Promise.all([flushLibrary(), flushOverrides()])
-      emitLibrary()
-      return updated
-    },
-
-    clearOverride: async (itemId) => {
-      const item = getItem(itemId)
-      if (!item) return null
-      clearOverrideEntry(itemId)
-      const reset: LibraryItem = {
-        ...item,
-        identify: 'unidentified',
-        tmdb: null,
-        tvDetails: null,
-        extraDetails: null,
-        posterCache: undefined,
-        backdropCache: undefined
-      }
-      putItem(reset)
-      await Promise.all([flushLibrary(), flushOverrides()])
-      emitLibrary()
-      return reset
-    },
+    // La lógica vive en core (override-service): la MISMA para Electron y Android.
+    applyOverride: (itemId, override) => applyOverrideToItem(itemId, override),
+    clearOverride: (itemId) => clearOverrideToAuto(itemId),
 
     getTvDetails: async (itemId) => {
       const item = getItem(itemId)

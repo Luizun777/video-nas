@@ -17,6 +17,7 @@ import {
   type ScannedFile
 } from '@core/scanner/grouper'
 import { walkVideos } from './walker'
+import { pullSharedOverrides, pushSharedOverrides } from '../metadata/shared-overrides-sync'
 
 export type ProgressListener = (progress: ScanProgress) => void
 export type StatusListener = (statuses: ServerStatus[]) => void
@@ -257,6 +258,15 @@ async function scanServer(
   }
   if (absorbedIds.length > 0) removeItems(absorbedIds)
 
+  // 2.5 Correcciones compartidas del share (.video-nas/overrides.json): lo remoto más
+  // nuevo se aplica ANTES de identificar, mapeando sus claves NFC contra los relPaths
+  // reales recién caminados — así esta misma pasada materializa portadas y tombstones.
+  await pullSharedOverrides(
+    server,
+    shareFs,
+    grouped.map((item) => item.relPath)
+  )
+
   // 3. Diferencia contra la biblioteca e identificación de los nuevos.
   // Se procesan en lotes: el limitador del cliente TMDB sigue marcando el ritmo real.
   const library = getLibrary()
@@ -294,6 +304,10 @@ async function scanServer(
 
     emitProgress({ current: processed, total: grouped.length })
   }
+
+  // 4. Subir al share las correcciones locales que aún no viajaron (best-effort:
+  // un share de solo lectura las deja pendientes para el próximo escaneo).
+  await pushSharedOverrides(server, shareFs)
 
   return seen
 }

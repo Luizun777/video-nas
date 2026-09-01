@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { FsAdapter, FsEntry } from '@core/io'
 
 /**
@@ -28,6 +28,23 @@ export function createNodeFs(mountPoint: string): FsAdapter {
         }
       }
       return entries
+    },
+
+    async readFile(relPath) {
+      try {
+        return new Uint8Array(await fs.readFile(join(mountPoint, relPath)))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+        throw error
+      }
+    },
+
+    async writeFile(relPath, data) {
+      const absPath = join(mountPoint, relPath)
+      await fs.mkdir(dirname(absPath), { recursive: true })
+      const tmpPath = `${absPath}.tmp`
+      await fs.writeFile(tmpPath, data)
+      await fs.rename(tmpPath, absPath)
     }
   }
 }

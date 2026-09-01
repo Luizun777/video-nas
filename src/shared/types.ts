@@ -205,13 +205,32 @@ export interface Library {
 // ---------------------------------------------------------------------------
 
 export interface MetadataOverride {
-  mode: 'tmdb' | 'file-only'
+  /** 'none' = tombstone de "restaurar automático": existe para que la sincronización
+   *  con otros dispositivos no re-empuje la corrección vieja que se acaba de quitar. */
+  mode: 'tmdb' | 'file-only' | 'none'
+  tmdbId?: number
+  mediaType?: MediaKind
+  setAt: string
+  /** Última vez que este override llegó al archivo compartido del NAS (F15). */
+  syncedAt?: string
+}
+
+export type Overrides = Record<string, MetadataOverride>
+
+/** Entrada del archivo compartido `.video-nas/overrides.json` en la raíz del share.
+ *  La clave del Record es el relPath del ancla normalizado a NFC y SIN serverId
+ *  (los serverId no son estables entre dispositivos; el archivo vive en el share). */
+export interface SharedOverrideEntry {
+  mode: 'tmdb' | 'file-only' | 'none'
   tmdbId?: number
   mediaType?: MediaKind
   setAt: string
 }
 
-export type Overrides = Record<string, MetadataOverride>
+export interface SharedOverridesFile {
+  version: 1
+  entries: Record<string, SharedOverrideEntry>
+}
 
 // ---------------------------------------------------------------------------
 // Estado de servidores y escaneo

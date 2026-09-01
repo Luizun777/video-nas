@@ -300,6 +300,76 @@ public class SmbClientManager {
     }
 
     /**
+     * Contenido completo de un archivo PEQUEÑO (metadata compartida), o null si no
+     * existe. Handle efímero a propósito: no entra a la caché LRU de streaming.
+     */
+    public byte[] readFileFully(String serverId, String relPath) throws IOException {
+        ShareHandle handle = handleFor(serverId);
+        synchronized (handle.lock) {
+            String smbPath = toSmbPath(relPath);
+            try {
+                if (!handle.share.fileExists(smbPath)) return null;
+                try (File file = handle.share.openFile(
+                        smbPath,
+                        EnumSet.of(AccessMask.GENERIC_READ),
+                        null,
+                        SMB2ShareAccess.ALL,
+                        SMB2CreateDisposition.FILE_OPEN,
+                        null);
+                     java.io.InputStream in = file.getInputStream()) {
+                    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                    byte[] buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
+                    return out.toByteArray();
+                }
+            } catch (SMBApiException e) {
+                if (e.getStatus() == NtStatus.STATUS_OBJECT_NAME_NOT_FOUND
+                    || e.getStatus() == NtStatus.STATUS_OBJECT_PATH_NOT_FOUND) {
+                    return null;
+                }
+                throw new IOException("SMB: " + e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * Escritura atómica en el share: crea las carpetas padre, escribe a un .tmp con
+     * GENERIC_WRITE y renombra encima del destino. Handle efímero, fuera de la LRU.
+     */
+    public void writeFileAtomic(String serverId, String relPath, byte[] data) throws IOException {
+        ShareHandle handle = handleFor(serverId);
+        synchronized (handle.lock) {
+            try {
+                String cleaned = relPath.startsWith("/") ? relPath.substring(1) : relPath;
+                int slash = cleaned.lastIndexOf('/');
+                if (slash > 0) {
+                    StringBuilder dir = new StringBuilder();
+                    for (String part : cleaned.substring(0, slash).split("/")) {
+                        if (dir.length() > 0) dir.append('\\');
+                        dir.append(part);
+                        String smbDir = dir.toString();
+                        if (!handle.share.folderExists(smbDir)) handle.share.mkdir(smbDir);
+                    }
+                }
+                String smbPath = toSmbPath(cleaned);
+                try (File file = handle.share.openFile(
+                        smbPath + ".tmp",
+                        EnumSet.of(AccessMask.GENERIC_WRITE, AccessMask.DELETE),
+                        null,
+                        SMB2ShareAccess.ALL,
+                        SMB2CreateDisposition.FILE_OVERWRITE_IF,
+                        null)) {
+                    file.write(data, 0);
+                    file.rename(smbPath, true);
+                }
+            } catch (SMBApiException e) {
+                throw new IOException("SMB: " + e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
      * Lee hasta buffer.length bytes en fileOffset. Devuelve los bytes leídos o -1 en EOF.
      * Reintenta UNA vez reconectando si el transporte murió a mitad de stream.
      */
