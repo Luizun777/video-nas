@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promises as nodeFs } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, normalize } from 'node:path'
 import { promisify } from 'node:util'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { EVENTS, IPC } from '@shared/ipc-channels'
@@ -38,8 +38,7 @@ import { probeMedia } from './playback/ffmpeg'
 import { startTranscodeSession, stopTranscodeSession } from './playback/transcode-session'
 import { decidePlaybackPlan } from '@core/playback/media-probe'
 import { findSubtitleCandidates } from '@core/playback/subtitle-candidates'
-import { pickTargetRelPath } from '@core/playback/resolve-target'
-import { subtitleTrackUrl } from '@shared/playback-url'
+import { convertSubtitleFile, extractEmbeddedSubtitle } from './playback/subtitle-extractor'
 import {
   closePlayerWindow,
   consumePendingAttach,
@@ -367,16 +366,35 @@ export function registerIpc(): void {
       }
     }
 
-    const target = pickTargetRelPath(item, relPath)
+    // Sin url: en desktop el contenido se pide por IPC (getSubtitleVtt).
     return findSubtitleCandidates({
       videoFileName,
       dirEntries: entries.filter((e) => e.isFile()).map((e) => e.name),
       subsDirEntries
-    }).map((candidate) => ({
-      ...candidate,
-      url: subtitleTrackUrl(itemId, target, { ext: candidate.relPath })
-    }))
+    })
   })
+
+  // El VTT viaja como texto por IPC y el renderer lo monta con blob:. Servirlo por
+  // videofile:// obligaría a marcar el <video> con crossOrigin, y eso rompe TODA la
+  // reproducción (el esquema no tiene corsEnabled).
+  ipcMain.handle(
+    IPC.getSubtitleVtt,
+    async (
+      _e,
+      itemId: string,
+      relPath: string | undefined,
+      source: { stream: number } | { ext: string }
+    ): Promise<string | null> => {
+      const resolved = await resolveAbsolutePath(itemId, relPath)
+      if ('error' in resolved) return null
+      if ('stream' in source) return extractEmbeddedSubtitle(resolved.absPath, source.stream)
+
+      const videoDir = dirname(resolved.absPath)
+      const subPath = normalize(join(videoDir, source.ext))
+      if (!subPath.startsWith(videoDir)) return null
+      return convertSubtitleFile(subPath)
+    }
+  )
 
   ipcMain.handle(
     IPC.startTranscode,

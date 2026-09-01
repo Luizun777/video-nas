@@ -1,27 +1,23 @@
 import { createReadStream, promises as fs } from 'node:fs'
-import { dirname, join, normalize } from 'node:path'
 import { Readable } from 'node:stream'
 import { protocol } from 'electron'
 import { mimeForPath, parseRange } from '@core/playback/http-range'
 import { parseVideoStreamUrl } from '@shared/playback-url'
 import { resolveAbsolutePath } from './resolve'
-import { convertSubtitleFile, extractEmbeddedSubtitle } from './subtitle-extractor'
 import { stopTranscodeSession, takeSessionStream } from './transcode-session'
 
 /**
  * Todo lo que consume el <video> del renderer, por host de videofile://
  *   - stream:    el archivo con soporte Range (206) — sin él no hay seek en archivos de GB.
- *   - subs:      pistas de subtítulos como WebVTT (embebidas via ffmpeg, o .srt externos).
  *   - transcode: el fMP4 de la sesión de transcodificación, como stream NO buscable.
  *
- * El <video> usa crossOrigin="anonymous" (obligatorio para que <track> funcione), y eso
- * vuelve CORS TODAS sus peticiones: cada respuesta —errores incluidos— lleva ACAO.
+ * SIN cabeceras CORS y sin crossOrigin en el <video> a propósito: el esquema no está
+ * registrado con corsEnabled, así que cualquier petición CORS la rechaza Chromium con
+ * "Format error" (rompía TODOS los formatos). Los subtítulos van por IPC + blob:.
  */
 
-const CORS = { 'Access-Control-Allow-Origin': '*' }
-
 function deny(body: string, status: number, headers: Record<string, string> = {}): Response {
-  return new Response(body, { status, headers: { ...CORS, ...headers } })
+  return new Response(body, { status, headers })
 }
 
 async function handleStream(request: Request): Promise<Response> {
@@ -49,7 +45,6 @@ async function handleStream(request: Request): Promise<Response> {
   const stream = createReadStream(resolved.absPath, { start, end })
 
   const headers: Record<string, string> = {
-    ...CORS,
     'Content-Type': mimeForPath(resolved.absPath),
     'Accept-Ranges': 'bytes',
     'Content-Length': String(end - start + 1),
@@ -62,35 +57,6 @@ async function handleStream(request: Request): Promise<Response> {
   return new Response(Readable.toWeb(stream) as ReadableStream, {
     status: range ? 206 : 200,
     headers
-  })
-}
-
-async function handleSubs(request: Request): Promise<Response> {
-  const url = new URL(request.url)
-  const itemId = url.searchParams.get('itemId')
-  if (!itemId) return deny('URL inválida', 400)
-  const relPath = url.searchParams.get('relPath') ?? undefined
-
-  const resolved = await resolveAbsolutePath(itemId, relPath)
-  if ('error' in resolved) return deny(resolved.error, 404)
-
-  const streamParam = url.searchParams.get('stream')
-  const extParam = url.searchParams.get('ext')
-
-  let vtt: string | null = null
-  if (streamParam !== null) {
-    vtt = await extractEmbeddedSubtitle(resolved.absPath, Number(streamParam))
-  } else if (extParam) {
-    // El .srt vive junto al video; se re-resuelve aquí con guardia anti ../
-    const videoDir = dirname(resolved.absPath)
-    const subPath = normalize(join(videoDir, extParam))
-    if (!subPath.startsWith(videoDir)) return deny('Ruta no permitida', 403)
-    vtt = await convertSubtitleFile(subPath)
-  }
-
-  if (vtt === null) return deny('No se pudo convertir el subtítulo', 404)
-  return new Response(vtt, {
-    headers: { ...CORS, 'Content-Type': 'text/vtt; charset=utf-8', 'Cache-Control': 'no-store' }
   })
 }
 
@@ -118,14 +84,13 @@ function handleTranscode(request: Request): Response {
   // 200 SIN Accept-Ranges ni Content-Length: así Chromium lo trata como stream en vivo
   // y jamás manda Range (que un pipe no puede satisfacer). El seek lo finge el motor.
   return new Response(wrapped, {
-    headers: { ...CORS, 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store' }
+    headers: { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store' }
   })
 }
 
 export function registerVideoFileProtocol(): void {
   protocol.handle('videofile', (request) => {
     const host = new URL(request.url).host
-    if (host === 'subs') return handleSubs(request)
     if (host === 'transcode') return Promise.resolve(handleTranscode(request))
     return handleStream(request)
   })

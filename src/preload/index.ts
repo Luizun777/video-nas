@@ -117,6 +117,11 @@ const api: IpcApi = {
 
   listSubtitleFiles: (itemId: string, relPath?: string) =>
     ipcRenderer.invoke(IPC.listSubtitleFiles, itemId, relPath) as Promise<SubtitleFileInfo[]>,
+  getSubtitleVtt: (
+    itemId: string,
+    relPath: string | undefined,
+    source: { stream: number } | { ext: string }
+  ) => ipcRenderer.invoke(IPC.getSubtitleVtt, itemId, relPath, source) as Promise<string | null>,
   probeMedia: (itemId: string, relPath?: string) =>
     ipcRenderer.invoke(IPC.probeMedia, itemId, relPath) as Promise<{
       probe: MediaProbe

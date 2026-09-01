@@ -1,4 +1,4 @@
-import { subtitleTrackUrl, transcodeSessionUrl, videoStreamUrl } from '@shared/playback-url'
+import { transcodeSessionUrl, videoStreamUrl } from '@shared/playback-url'
 import type {
   MediaProbe,
   MediaTrack,
@@ -108,6 +108,9 @@ export class HtmlVideoEngine implements PlaybackEngine {
   private externalSubs: SubtitleFileInfo[] = []
   private activeSubtitleId: string | null = null
   private trackEl: HTMLTrackElement | null = null
+  private trackBlobUrl: string | null = null
+  /** Descarta VTT que llegan tarde tras cambiar de pista. */
+  private subtitleSeq = 0
 
   get videoElement(): HTMLVideoElement | null {
     return this.el
@@ -121,9 +124,10 @@ export class HtmlVideoEngine implements PlaybackEngine {
     if (!el) return
 
     el.volume = this.volume
-    // Los <track> WebVTT exigen crossOrigin, y solo el desktop los sirve (con ACAO en
-    // todas las respuestas de videofile://). En el preview del navegador no se toca.
-    if (window.api.probeMedia) el.crossOrigin = 'anonymous'
+    // OJO: nada de crossOrigin aquí. El esquema videofile:// no está registrado con
+    // corsEnabled, así que marcar el <video> como cross-origin hace que Chromium
+    // rechace TODOS los formatos con "Format error". Los subtítulos evitan el problema
+    // viajando por IPC y montándose como blob: (mismo origen).
 
     const emit = (event: EngineEvent) => (): void => this.emit(event)
     const onPlay = emit('play')
@@ -388,30 +392,42 @@ export class HtmlVideoEngine implements PlaybackEngine {
   setSubtitleTrack(id: string | null): void {
     this.clearSubtitleTrack()
     this.activeSubtitleId = id
-    if (id !== null && this.el && this.target) {
-      let url: string | null = null
-      if (id.startsWith('ext:')) {
-        url = this.externalSubs[Number(id.slice(4))]?.url ?? null
-      } else {
-        url = subtitleTrackUrl(this.target.itemId, this.target.relPath, { stream: Number(id) })
-      }
-      if (url) {
+    this.emit('tracksChanged')
+    if (id === null || !this.target || !window.api.getSubtitleVtt) return
+
+    // El VTT viaja por IPC (texto) y se monta como blob: — mismo origen, así el <track>
+    // funciona sin volver CORS las peticiones del <video>.
+    const seq = ++this.subtitleSeq
+    const source = id.startsWith('ext:')
+      ? { ext: this.externalSubs[Number(id.slice(4))]?.relPath ?? '' }
+      : { stream: Number(id) }
+
+    void window.api
+      .getSubtitleVtt(this.target.itemId, this.target.relPath, source)
+      .then((vtt) => {
+        if (!vtt || seq !== this.subtitleSeq || !this.el || this.activeSubtitleId !== id) return
+        const blobUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }))
         const track = document.createElement('track')
         track.kind = 'subtitles'
-        track.src = url
+        track.src = blobUrl
         track.default = true
         this.el.appendChild(track)
         track.track.mode = 'showing'
         this.trackEl = track
-      }
-    }
-    this.emit('tracksChanged')
+        this.trackBlobUrl = blobUrl
+      })
+      .catch(() => {})
   }
 
   private clearSubtitleTrack(): void {
+    this.subtitleSeq += 1
     if (this.trackEl) {
       this.trackEl.remove()
       this.trackEl = null
+    }
+    if (this.trackBlobUrl) {
+      URL.revokeObjectURL(this.trackBlobUrl)
+      this.trackBlobUrl = null
     }
   }
 

@@ -354,9 +354,11 @@ export interface PlaybackPlan {
 /** Subtítulo externo (.srt/.ass) encontrado junto al video al momento de reproducir. */
 export interface SubtitleFileInfo {
   name: string
+  /** Ruta relativa al directorio del video ("peli.es.srt", "Subs/2_Spanish.srt"). */
   relPath: string
-  /** URL ya servible por la plataforma (puente HTTP en Android, videofile:// en desktop). */
-  url: string
+  /** Solo Android: URL del puente HTTP que libVLC carga como slave. En desktop el
+   *  contenido se pide por IPC (getSubtitleVtt), no por URL. */
+  url?: string
   language?: string
 }
 
@@ -475,6 +477,13 @@ export interface IpcApi {
   setIntroMark(itemId: string, seconds: number): Promise<LibraryItem | null>
   /** Subtítulos externos junto al video (opcional: Android desde F13, desktop desde F14). */
   listSubtitleFiles?(itemId: string, relPath?: string): Promise<SubtitleFileInfo[]>
+  /** Solo desktop: una pista (embebida por índice, o externa por relPath) como WebVTT.
+   *  Viaja por IPC y NO por el protocolo: así el <video> no necesita crossOrigin. */
+  getSubtitleVtt?(
+    itemId: string,
+    relPath: string | undefined,
+    source: { stream: number } | { ext: string }
+  ): Promise<string | null>
   /** Solo desktop: ffprobe + decisión directo/transcode. Android usa libVLC y no lo trae. */
   probeMedia?(itemId: string, relPath?: string): Promise<{ probe: MediaProbe; plan: PlaybackPlan } | null>
   startTranscode?(options: {

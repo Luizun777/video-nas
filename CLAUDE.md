@@ -64,9 +64,13 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
   SOLO arm64: esos paquetes instalan el binario de la arquitectura donde corrió
   `npm install`. Ojo: `ffprobe-static` trae un binario darwin/arm64 de arquitectura
   equivocada; por eso se usa `@ffprobe-installer/ffprobe`.
-- **El `<video>` del desktop lleva `crossOrigin="anonymous"`** (lo exigen los `<track>`
-  WebVTT), y eso vuelve CORS TODAS sus peticiones: cualquier respuesta nueva de
-  `videofile://` (errores incluidos) debe llevar `Access-Control-Allow-Origin: *`.
+- **NUNCA pongas `crossOrigin` en el `<video>` del desktop.** El esquema `videofile://`
+  no está registrado con `corsEnabled`, así que marcar el elemento como cross-origin
+  hace que Chromium rechace TODOS los formatos con `MEDIA_ELEMENT_ERROR: Format error`
+  (mkv, mp4 y avi por igual). Por eso los subtítulos del desktop viajan como texto por
+  IPC (`getSubtitleVtt`) y se montan con `blob:`, que es mismo origen y no necesita
+  `<track>` cross-origin. Verificado con el NAS real: mismo MKV, con `crossOrigin` da
+  Format error y sin él carga 3840x1606.
 - **El transcode se sirve como stream NO buscable** (200 sin Accept-Ranges ni
   Content-Length, para que Chromium jamás mande Range a un pipe); el seek lo finge
   HtmlVideoEngine matando la sesión y relanzando ffmpeg con `-ss`.
@@ -211,3 +215,12 @@ tests/         módulos puros de core (corren sin Electron ni Android)
 - El auto-avance y el ⏭ deben PRESERVAR la vista del player (openPlayer con
   preserveView): sin eso, avanzar de episodio con la mini-barra activa te saca del
   catálogo y te planta el player en grande.
+- Un `<video>` que falla por CORS reporta exactamente lo mismo que un códec no
+  soportado (`MEDIA_ELEMENT_ERROR: Format error`, code 4). Cuando "no reproduce NINGÚN
+  formato" (incluido mp4 H.264), sospechar del transporte/CORS antes que de códecs: el
+  discriminador rápido es cargar el mismo archivo en dos `<video>`, uno con
+  `crossOrigin` y otro sin él, por CDP.
+- Para depurar el desktop por CDP: `npx electron-vite dev --outDir out --
+  --remote-debugging-port=N`. Matar la instancia anterior de verdad (`pkill -9 -f
+  Electron`) antes de reabrir: si el puerto queda ocupado, la app arranca SIN devtools
+  y te conectas por error a la instancia vieja.

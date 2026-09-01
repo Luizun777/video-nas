@@ -62,7 +62,8 @@ export class VlcNativeEngine implements PlaybackEngine {
     try {
       const candidates = await window.api.listSubtitleFiles(target.itemId, target.relPath)
       for (const candidate of candidates) {
-        void VlcPlayer.addSubtitleSlave({ url: candidate.url, select: false })
+        // url solo la rellena Android (el puente HTTP); en desktop no aplica.
+        if (candidate.url) void VlcPlayer.addSubtitleSlave({ url: candidate.url, select: false })
       }
     } catch {
       // Sin subtítulos externos no se rompe nada.
