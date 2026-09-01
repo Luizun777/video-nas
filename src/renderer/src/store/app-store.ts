@@ -26,6 +26,8 @@ interface AppState {
   versionPickerItemId: string | null
   /** Qué se está reproduciendo en el reproductor integrado. null = overlay cerrado. */
   playingTarget: PlayTarget | null
+  /** 'mini' = barra tipo Spotify abajo; la reproducción sigue sin desmontar el player. */
+  playerView: 'full' | 'mini'
   downloads: DownloadEntry[]
   queue: QueueEntry[]
   toasts: Toast[]
@@ -34,8 +36,10 @@ interface AppState {
   setQuery: (query: string) => void
   openEditor: (itemId: string | null) => void
   openVersionPicker: (itemId: string | null) => void
-  openPlayer: (target: PlayTarget) => void
+  openPlayer: (target: PlayTarget, opts?: { preserveView?: boolean }) => void
   closePlayer: () => void
+  minimizePlayer: () => void
+  expandPlayer: () => void
   /** Reproduce en el externo saltándose el integrado (fallback por formato incompatible). */
   playExternal: (itemId: string, relPath?: string) => Promise<void>
   addToQueue: (itemId: string) => Promise<void>
@@ -73,6 +77,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   editingItemId: null,
   versionPickerItemId: null,
   playingTarget: null,
+  playerView: 'full',
   downloads: [],
   queue: [],
   toasts: [],
@@ -109,8 +114,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   setQuery: (query) => set({ query }),
   openEditor: (itemId) => set({ editingItemId: itemId }),
   openVersionPicker: (itemId) => set({ versionPickerItemId: itemId }),
-  openPlayer: (target) => set({ playingTarget: target }),
-  closePlayer: () => set({ playingTarget: null }),
+  // preserveView: el auto-avance y el ⏭ de la mini-barra no deben sacar al usuario
+  // del catálogo; un play explícito sobre un título nuevo sí abre en grande.
+  openPlayer: (target, opts) =>
+    set((state) => ({
+      playingTarget: target,
+      playerView: opts?.preserveView && state.playingTarget ? state.playerView : 'full'
+    })),
+  closePlayer: () => set({ playingTarget: null, playerView: 'full' }),
+  minimizePlayer: () => set({ playerView: 'mini' }),
+  expandPlayer: () => set({ playerView: 'full' }),
 
   reloadConfig: async () => set({ config: await window.api.getConfig() }),
   reloadLibrary: async () => set({ library: await window.api.getLibrary() }),

@@ -6,6 +6,7 @@ import { posterSrc } from '@shared/media-src'
 import { THUMB_SIZE, tmdbImageUrl } from '@shared/tmdb-images'
 import { decideNextUp } from '@shared/next-up'
 import { displayTitle, queuedItems, tmdbIndex, useAppStore } from '@/store/app-store'
+import { MiniPlayerBar } from '@/components/MiniPlayerBar'
 
 /** Antes de este umbral desde el final se ofrece lo que siga (episodio/cola/recomendación). */
 const NEXT_UP_THRESHOLD_SECONDS = 30
@@ -41,6 +42,11 @@ export interface VideoPlayerProps {
   onDetach?: (currentTimeSeconds: number) => void
   /** Presente solo en la ventana separada: renderiza "Volver a la app". */
   onReattach?: (currentTimeSeconds: number) => void
+  /** 'mini' = barra tipo Spotify; el componente NO se desmonta al cambiar de vista. */
+  view?: 'full' | 'mini'
+  /** Presentes solo en el overlay: minimizar a la barra / volver al player completo. */
+  onMinimize?: () => void
+  onExpand?: () => void
 }
 
 export function VideoPlayer({
@@ -51,7 +57,10 @@ export function VideoPlayer({
   onClose,
   onChangeTarget,
   onDetach,
-  onReattach
+  onReattach,
+  view = 'full',
+  onMinimize,
+  onExpand
 }: VideoPlayerProps): React.JSX.Element | null {
   const playExternal = useAppStore((s) => s.playExternal)
   const pushToast = useAppStore((s) => s.pushToast)
@@ -245,6 +254,14 @@ export function VideoPlayer({
     onClose()
   }, [onClose, saveProgress])
 
+  // Minimizar no debe dejar una ventana PiP huérfana ni la app atrapada en fullscreen.
+  const handleMinimize = useCallback(() => {
+    if (!onMinimize) return
+    if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {})
+    if (document.fullscreenElement) void document.exitFullscreen()
+    onMinimize()
+  }, [onMinimize])
+
   /** Avanza a lo que decidió next-up: episodio directo, o saca de la cola en main (atómico). */
   const advance = useCallback(async () => {
     if (decision.kind === 'episode') {
@@ -324,8 +341,10 @@ export function VideoPlayer({
     }
   }, [itemId, effectiveRelPath])
 
-  // Atajos de teclado.
+  // Atajos de teclado. En modo mini NO se registran: el usuario está navegando el
+  // catálogo (espacio/flechas/Escape deben quedarse para la app, no para el player).
   useEffect(() => {
+    if (view === 'mini') return
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.target instanceof HTMLInputElement) return
       switch (event.key) {
@@ -352,14 +371,19 @@ export function VideoPlayer({
           toggleFullscreen()
           break
         case 'Escape':
-          if (!document.fullscreenElement) handleClose()
+          // En el overlay minimiza (la reproducción sigue en la barra); en la ventana
+          // separada no hay barra, así que cierra como siempre.
+          if (!document.fullscreenElement) {
+            if (onMinimize) handleMinimize()
+            else handleClose()
+          }
           break
       }
       revealControls()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [togglePlay, seekBy, toggleFullscreen, handleClose, revealControls])
+  }, [view, togglePlay, seekBy, toggleFullscreen, handleClose, handleMinimize, onMinimize, revealControls])
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.volume = volume
@@ -461,19 +485,21 @@ export function VideoPlayer({
     return first ? { related: first, ownedItemId: undefined } : null
   })()
 
+  const isMini = view === 'mini'
+
   return (
     <div
-      className="player-overlay"
+      className={isMini ? 'player-overlay player-overlay--mini' : 'player-overlay'}
       ref={containerRef}
-      onMouseMove={isCoarsePointer ? undefined : revealControls}
-      onDoubleClick={toggleFullscreen}
+      onMouseMove={isMini || isCoarsePointer ? undefined : revealControls}
+      onDoubleClick={isMini ? undefined : toggleFullscreen}
     >
       <video
         ref={videoRef}
         className="player-video"
         src={videoStreamUrl(itemId, effectiveRelPath)}
         autoPlay
-        onClick={isCoarsePointer ? handleVideoTap : togglePlay}
+        onClick={isMini ? onExpand : isCoarsePointer ? handleVideoTap : togglePlay}
         onPlay={() => setPlaying(true)}
         onPause={() => {
           setPlaying(false)
@@ -499,13 +525,13 @@ export function VideoPlayer({
         onError={handleError}
       />
 
-      {showSkipIntro && (
+      {!isMini && showSkipIntro && (
         <button className="player-skip-intro" onClick={handleSkipIntro}>
           Saltar intro
         </button>
       )}
 
-      {nextUpState === 'countdown' && decision.kind === 'episode' && (
+      {!isMini && nextUpState === 'countdown' && decision.kind === 'episode' && (
         <div className="player-next-up">
           <div className="player-next-up-title">Siguiente episodio en {countdown}s</div>
           <div className="player-next-up-sub">
@@ -522,7 +548,7 @@ export function VideoPlayer({
         </div>
       )}
 
-      {nextUpState === 'countdown' && decision.kind === 'queue' && (
+      {!isMini && nextUpState === 'countdown' && decision.kind === 'queue' && (
         <div className="player-next-up">
           <div className="player-next-up-title">A continuación (de tu cola) en {countdown}s</div>
           <div className="player-recommend">
@@ -546,7 +572,7 @@ export function VideoPlayer({
         </div>
       )}
 
-      {recommendation && (
+      {!isMini && recommendation && (
         <div className="player-next-up">
           <div className="player-next-up-title">
             {recommendation.ownedItemId ? 'A continuación' : 'Te puede interesar'}
@@ -591,6 +617,21 @@ export function VideoPlayer({
         </div>
       )}
 
+      {isMini && (
+        <MiniPlayerBar
+          title={title}
+          subtitle={subtitle}
+          playing={playing}
+          progressPercent={progressPercent}
+          canAdvance={decision.kind !== 'none'}
+          onTogglePlay={togglePlay}
+          onNext={() => void advance()}
+          onExpand={onExpand ?? (() => {})}
+          onClose={handleClose}
+        />
+      )}
+
+      {!isMini && (
       <div className={controlsVisible ? 'player-controls' : 'player-controls player-controls-hidden'}>
         <div className="player-header">
           <div>
@@ -613,6 +654,15 @@ export function VideoPlayer({
                 onClick={() => onReattach(videoRef.current?.currentTime ?? 0)}
               >
                 ⇤ Volver a la app
+              </button>
+            )}
+            {onMinimize && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={handleMinimize}
+                title="Sigue reproduciendo en una barra abajo mientras navegas el catálogo"
+              >
+                ⌄ Minimizar
               </button>
             )}
             <button className="btn btn-ghost btn-sm" onClick={handleClose}>
@@ -684,6 +734,7 @@ export function VideoPlayer({
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

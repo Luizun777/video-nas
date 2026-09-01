@@ -9,8 +9,11 @@ import { useAppStore } from '@/store/app-store'
  */
 export function PlayerOverlay(): React.JSX.Element | null {
   const playingTarget = useAppStore((s) => s.playingTarget)
+  const playerView = useAppStore((s) => s.playerView)
   const openPlayer = useAppStore((s) => s.openPlayer)
   const closePlayer = useAppStore((s) => s.closePlayer)
+  const minimizePlayer = useAppStore((s) => s.minimizePlayer)
+  const expandPlayer = useAppStore((s) => s.expandPlayer)
 
   useEffect(() => {
     const unsubscribe = window.api.onPlayerAttach((target) => openPlayer(target))
@@ -29,8 +32,12 @@ export function PlayerOverlay(): React.JSX.Element | null {
       relPath={playingTarget.relPath}
       startAt={playingTarget.startAt}
       standalone={false}
+      view={playerView}
       onClose={closePlayer}
-      onChangeTarget={openPlayer}
+      onMinimize={minimizePlayer}
+      onExpand={expandPlayer}
+      // El auto-avance y el ⏭ conservan la vista actual (minimizado sigue minimizado).
+      onChangeTarget={(target) => openPlayer(target, { preserveView: true })}
       onDetach={
         // Sin ventanas separadas en la plataforma (Android): el botón no se renderiza.
         window.api.capabilities.separateWindow

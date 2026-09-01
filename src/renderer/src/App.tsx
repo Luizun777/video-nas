@@ -17,6 +17,7 @@ import { useAppStore } from '@/store/app-store'
 
 export function App(): React.JSX.Element {
   const bootstrap = useAppStore((s) => s.bootstrap)
+  const hasMiniPlayer = useAppStore((s) => s.playingTarget !== null && s.playerView === 'mini')
 
   useEffect(() => {
     void bootstrap()
@@ -37,7 +38,7 @@ export function App(): React.JSX.Element {
 
   return (
     <HashRouter>
-      <div className="app">
+      <div className={hasMiniPlayer ? 'app has-mini-player' : 'app'}>
         <TopNav />
         <main className="content">
           <Routes>
