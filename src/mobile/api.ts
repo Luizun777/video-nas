@@ -83,7 +83,6 @@ import { VlcNativeEngine } from './vlc-engine'
 const ANDROID_CAPABILITIES: AppCapabilities = {
   platform: 'android',
   separateWindow: false,
-  pip: false,
   revealInFiles: false,
   chooseExternalPlayerFile: false,
   smbCredentials: true,

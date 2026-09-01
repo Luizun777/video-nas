@@ -44,10 +44,32 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
   FsAdapter, ImageCacheAdapter, ScanEnv, DownloadTransfer); Electron las implementa en
   `src/main/adapters/` y Android en `src/mobile/adapters/`. UNA sola implementación de
   la lógica: nada de copiar el orquestador/stores por plataforma.
-- **El contrato JS↔nativo es `src/mobile/nas-plugin.ts` ↔ `NasPlugin.java`.** Cambios
-  en uno se reflejan en el otro. El puente HTTP de Android replica 1:1 el contrato
-  Range de `src/core/playback/http-range.ts` (tests/http-range.test.ts es la referencia
-  para ambos servidores).
+- **Los contratos JS↔nativo son `src/mobile/nas-plugin.ts` ↔ `NasPlugin.java` y
+  `src/mobile/vlc-player-plugin.ts` ↔ `VlcPlayerPlugin.java`.** Cambios en uno se
+  reflejan en el otro. El puente HTTP de Android replica 1:1 el contrato Range de
+  `src/core/playback/http-range.ts` (tests/http-range.test.ts es la referencia para
+  ambos servidores).
+- **El reproductor tiene UNA UI y dos motores** detrás de la interfaz `PlaybackEngine`
+  (`src/renderer/src/player/`): `HtmlVideoEngine` (el `<video>` de Chromium, desktop) y
+  `VlcNativeEngine` (`src/mobile/vlc-engine.ts`, libVLC en un TextureView DEBAJO del
+  WebView transparente — clase `native-video-full` en body). El boot móvil registra su
+  fábrica en `engine-registry.ts`, mismo patrón que `setVideoUrlResolver`. Los controles,
+  el menú de pistas y la mini-barra son compartidos; nada de UI por plataforma.
+- **libVLC va clavado a 3.6.x** (`libvlc-all:3.6.5`): 3.7+ exige compileSdk 36 y el
+  proyecto (AGP 8.7) topa en 35. `abiFilters "arm64-v8a"` — para emulador x86_64 hay
+  que quitar el filtro temporalmente.
+- **ffmpeg/ffprobe del desktop** vienen de `ffmpeg-static` + `@ffprobe-installer/ffprobe`
+  (dependencies, NO devDependencies), van como `external` en el build de main y
+  `asarUnpack` en electron-builder (un binario dentro del asar no ejecuta). El dmg es
+  SOLO arm64: esos paquetes instalan el binario de la arquitectura donde corrió
+  `npm install`. Ojo: `ffprobe-static` trae un binario darwin/arm64 de arquitectura
+  equivocada; por eso se usa `@ffprobe-installer/ffprobe`.
+- **El `<video>` del desktop lleva `crossOrigin="anonymous"`** (lo exigen los `<track>`
+  WebVTT), y eso vuelve CORS TODAS sus peticiones: cualquier respuesta nueva de
+  `videofile://` (errores incluidos) debe llevar `Access-Control-Allow-Origin: *`.
+- **El transcode se sirve como stream NO buscable** (200 sin Accept-Ranges ni
+  Content-Length, para que Chromium jamás mande Range a un pipe); el seek lo finge
+  HtmlVideoEngine matando la sesión y relanzando ffmpeg con `-ss`.
 - **La normalización NFC de nombres SMB vive SOLO en `src/mobile/adapters/smb-fs-adapter.ts`**,
   nunca en core: los ids del desktop se construyeron con el NFD de macOS y no deben
   cambiar.
@@ -63,6 +85,14 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
   que vitest los pruebe directamente. Toda la lógica de nombres raros vive ahí.
 - **El escaneo nunca pisa las correcciones del usuario.** `overrides.json` es un archivo
   aparte de `library.json`; la precedencia es siempre override > match cacheado > búsqueda.
+- **Las correcciones viajan entre dispositivos por `.video-nas/overrides.json` en la
+  raíz de cada share** (`src/core/metadata/`): claves = relPath del ancla en NFC y SIN
+  serverId (ni los serverId ni la forma NFD/NFC de los ids locales son estables entre
+  dispositivos — el mapeo se hace contra los relPaths recién caminados en el escaneo).
+  Newest-wins por `setAt`; "restaurar automático" escribe un tombstone `mode:'none'`
+  (nunca borrar la entrada: el otro dispositivo re-empujaría su copia vieja). Todo es
+  best-effort: NAS apagado o share de solo lectura deja el override pendiente
+  (`syncedAt` < `setAt`) y se reintenta en el siguiente escaneo.
 - **El renderer nunca construye rutas absolutas.** Pide `play(itemId)` y el proceso main
   resuelve el punto de montaje actual + la ruta relativa.
 - Un servidor sin conexión no borra nada: su contenido cacheado sigue visible con badge.
@@ -73,28 +103,37 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
 
 - `config.json` — token de TMDB y lista de servidores NAS
 - `library.json` — catálogo escaneado (clave: `"${serverId}:${relPath}"`)
-- `overrides.json` — correcciones manuales de metadata
+- `overrides.json` — correcciones manuales de metadata (con `setAt`/`syncedAt` de sync)
+- `progress.json` — "continuar viendo" (ambas plataformas desde F10)
 - `cache/posters/`, `cache/backdrops/` — imágenes descargadas, servidas por `mediacache://`
+
+Y en el NAS, por share: `.video-nas/overrides.json` — correcciones compartidas entre
+dispositivos (el walker ignora dotdirs, nunca aparece en el catálogo).
 
 ## Estructura
 
 ```
 src/shared/    types.ts (data model + contrato IpcApi + capabilities), ipc-channels.ts,
-               media-src.ts y playback-url.ts (resolvers por plataforma)
+               media-src.ts y playback-url.ts (resolvers por plataforma + URLs de
+               subs/transcode del desktop)
 src/core/      lógica compartida SIN plataforma: io.ts (interfaces), scanner/, tmdb/,
                stores/ (JsonStore + config/library/overrides/queue/progress),
-               playback/ (http-range, ebml-chapters, chapter-reader, resolve-target),
-               downloads/
+               playback/ (http-range, ebml-chapters, chapter-reader, resolve-target,
+               subtitle-candidates, media-probe), metadata/ (override-service +
+               shared-overrides puro + shared-overrides-sync), downloads/
 src/main/      solo Electron: index.ts, ipc.ts, adapters/ (Node impls de core/io),
-               nas/ (mount por Llavero, discovery), playback/ (protocolos, ventana)
+               nas/ (mount por Llavero, discovery), playback/ (protocolos stream/subs/
+               transcode, ffmpeg, subtitle-extractor, transcode-session, ventana)
 src/preload/   index.ts (contextBridge + DESKTOP_CAPABILITIES)
 src/mobile/    solo Android/preview: boot.ts, api.ts (window.api completo en WebView),
-               nas-plugin.ts (contrato del plugin), adapters/ (Capacitor impls),
+               nas-plugin.ts y vlc-player-plugin.ts (contratos de plugins),
+               vlc-engine.ts (PlaybackEngine sobre libVLC), adapters/ (Capacitor impls),
                playback.ts (URLs del puente), dev-mock-api.ts (preview en navegador)
 src/renderer/  src/{components,views,modals,store,styles} — compartido tal cual;
+               src/player/ (PlaybackEngine + HtmlVideoEngine + registry + surface);
                index.html (desktop) e index.mobile.html (Android)
-android/       proyecto Capacitor; el plugin vive en app/src/main/java/com/luizun/videonas/
-               (NasPlugin, SmbClientManager, StreamServer)
+android/       proyecto Capacitor; los plugins viven en app/src/main/java/com/luizun/videonas/
+               (NasPlugin, SmbClientManager, StreamServer, VlcPlayerPlugin, VlcPlayerManager)
 tests/         módulos puros de core (corren sin Electron ni Android)
 ```
 
@@ -153,7 +192,22 @@ tests/         módulos puros de core (corren sin Electron ni Android)
     (incluso en silencio digital real); con AC3/DTS se queda clavado en 0 para siempre
     aunque el video avance. Distinguir "no hay audio" es imposible sin esto — `audioTracks`
     no está expuesto en este WebView.
-  El watchdog de VideoPlayer (por intervalo, no timeupdate, para cubrir también el caso
-  atascado en pausa) cubre ambos: videoWidth===0 con metadata cargada, o 2 strikes de
-  ~4s con audio en 0 mientras currentTime avanza. Ambos caen al reproductor externo
-  igual que un onError real.
+  El watchdog (hoy dentro de HtmlVideoEngine; por intervalo, no timeupdate, para cubrir
+  también el caso atascado en pausa) cubre ambos: videoWidth===0 con metadata cargada,
+  o 2 strikes de ~4s con audio en 0 mientras currentTime avanza. Desde F14 primero
+  reintenta UNA vez en transcode y solo después cae al reproductor externo. En Android
+  ya ni corre: VlcNativeEngine decodifica todo.
+- `libvlc-all` 3.7+ exige compileSdk 36 vía su AAR metadata; con AGP 8.7 (tope SDK 35)
+  hay que quedarse en 3.6.x. Y `ffprobe-static` publica un binario darwin/arm64 de
+  arquitectura equivocada ("bad CPU type"): usar `@ffprobe-installer/ffprobe`.
+- El mini-viewport de video EN la mini-barra no es viable con el motor nativo: el
+  TextureView vive detrás del WebView y haría falta un "agujero" transparente a través
+  de TODO el DOM del catálogo. En mini el motor nativo suelta las vistas
+  (`detachViews`, el audio sigue) y la barra muestra la portada; el motor HTML sí
+  encoge su `<video>` como miniatura viva.
+- Los HMR de Vite pueden dejar módulos viejos mezclados tras un refactor grande (errores
+  de símbolos "not defined" que el typecheck no reporta): recargar la página entera
+  antes de perseguir fantasmas.
+- El auto-avance y el ⏭ deben PRESERVAR la vista del player (openPlayer con
+  preserveView): sin eso, avanzar de episodio con la mini-barra activa te saca del
+  catálogo y te planta el player en grande.

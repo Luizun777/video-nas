@@ -416,7 +416,6 @@ export interface AppCapabilities {
   platform: 'desktop' | 'android'
   /** Ventana separada del reproductor (multi-ventana de Electron). */
   separateWindow: boolean
-  pip: boolean
   /** "Mostrar en Finder" o equivalente. */
   revealInFiles: boolean
   /** Diálogo del sistema para elegir una app externa concreta. */

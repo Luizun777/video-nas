@@ -34,7 +34,6 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 const DESKTOP_CAPABILITIES: AppCapabilities = {
   platform: 'desktop',
   separateWindow: true,
-  pip: true,
   revealInFiles: true,
   chooseExternalPlayerFile: true,
   smbCredentials: false,

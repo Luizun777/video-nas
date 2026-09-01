@@ -150,6 +150,7 @@ export function DetailView(): React.JSX.Element {
   const library = useAppStore((s) => s.library)
   const play = useAppStore((s) => s.play)
   const playSmart = useAppStore((s) => s.playSmart)
+  const playExternal = useAppStore((s) => s.playExternal)
   const openEditor = useAppStore((s) => s.openEditor)
   const pushToast = useAppStore((s) => s.pushToast)
   const statuses = useAppStore((s) => s.statuses)
@@ -303,6 +304,13 @@ export function DetailView(): React.JSX.Element {
           </button>
           <button className="btn" onClick={() => openEditor(item.id)}>
             Editar información
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => void playExternal(item.id)}
+            title="Abre este título en VLC u otro reproductor instalado"
+          >
+            Reproductor externo
           </button>
           {window.api.capabilities.revealInFiles && (
             <button

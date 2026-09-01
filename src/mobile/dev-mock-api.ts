@@ -211,7 +211,6 @@ export function installMockApi(): void {
     capabilities: {
       platform: 'android',
       separateWindow: false,
-      pip: false,
       revealInFiles: false,
       chooseExternalPlayerFile: false,
       smbCredentials: true,
