@@ -1,6 +1,6 @@
 {
   "name": "video-nas",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Catálogo tipo Netflix para las películas y series de tu NAS",
   "main": "./out/main/index.js",
   "author": "luizun",
@@ -10,6 +10,7 @@
     "start": "electron-vite preview",
     "build": "npm run typecheck && electron-vite build",
     "dist": "npm run build && electron-builder --config electron-builder.yml --publish never",
+    "icons": "node scripts/generate-icons.mjs",
     "dev:mobile": "vite --config vite.config.mobile.ts",
     "build:mobile": "npm run typecheck && vite build --config vite.config.mobile.ts",
     "cap:sync": "npm run build:mobile && npx cap sync android",

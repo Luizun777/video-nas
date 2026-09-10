@@ -21,6 +21,8 @@ npm run typecheck   # tsc sobre node (main/core) y web (renderer/core/mobile)
 npm run build       # typecheck + build de producción de escritorio a out/
 npm run dist        # empaqueta para el SO actual (macOS: dmg+zip arm64; Windows: .exe portable)
 git tag vX.Y.Z && git push origin vX.Y.Z  # Actions compila Mac + Windows y publica la release
+npm run icons       # regenera build/icon.{icns,ico,png} y los mipmaps de Android desde el SVG
+                    # de scripts/generate-icons.mjs (solo macOS: sips + iconutil)
 
 npm run dev:mobile      # preview móvil en navegador con API mock (puerto 5199,
                         # abrir /index.mobile.html)
@@ -152,6 +154,8 @@ android/       proyecto Capacitor; los plugins viven en app/src/main/java/com/lu
 tests/         módulos puros de core (corren sin Electron ni Android)
 .github/       workflows/release.yml (compila Mac + Windows, publica la release con tag v*)
                y release-notes.md (instrucciones de descarga y primer arranque)
+scripts/       generate-icons.mjs (dibujo SVG del icono → icns/ico/mipmaps) y rasterize-svg.cjs
+build/         icon.icns, icon.ico, icon.png: generados, electron-builder los toma solos
 ```
 
 ## Lecciones aprendidas
@@ -272,3 +276,8 @@ tests/         módulos puros de core (corren sin Electron ni Android)
   y `--remote-debugging-port`. userData y el bloqueo de instancia única quedan aislados
   (verificado: el config se crea en el temporal y los mtime de los JSON reales no cambian).
   Y no borres `release/` sin mirar si hay una app abierta desde ahí.
+- Rasterizar SVG a PNG con alpha en esta Mac (no hay rsvg ni ImageMagick): dibujar el SVG
+  en un `<canvas>` desde una ventana oculta de Electron (`executeJavaScript` →
+  `toDataURL`). Chrome headless `--screenshot` se cuelga, y el offscreen de Electron
+  (evento `paint`) da frames en blanco y sin alpha. Además, sin listener de
+  `window-all-closed` Electron sale al cerrar la última ventana, también en macOS.
