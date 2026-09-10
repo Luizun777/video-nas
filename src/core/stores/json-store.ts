@@ -49,7 +49,8 @@ export class JsonStore<T> {
     if (this.timer) clearTimeout(this.timer)
     this.timer = setTimeout(() => {
       this.timer = null
-      void this.flush()
+      // Si falla, el siguiente cambio vuelve a escribir el estado completo.
+      this.flush().catch((error: unknown) => console.warn(`No se pudo guardar ${this.fileName}:`, error))
     }, 400)
   }
 
@@ -60,7 +61,12 @@ export class JsonStore<T> {
       this.timer = null
     }
     const snapshot = JSON.stringify(this.data, null, 2)
-    this.writing = this.writing.then(() => this.io.writeAtomic(this.fileName, snapshot))
+    // El catch mantiene viva la cadena: sin él, UNA escritura fallida (en Windows basta un
+    // rename con EPERM porque el antivirus tiene el archivo abierto) rechazaba todas las
+    // siguientes y el store dejaba de guardar hasta reiniciar la app.
+    this.writing = this.writing
+      .catch(() => {})
+      .then(() => this.io.writeAtomic(this.fileName, snapshot))
     return this.writing
   }
 }

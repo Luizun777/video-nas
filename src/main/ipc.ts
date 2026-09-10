@@ -1,7 +1,5 @@
-import { execFile } from 'node:child_process'
 import { promises as nodeFs } from 'node:fs'
 import { basename, dirname, join, normalize } from 'node:path'
-import { promisify } from 'node:util'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { EVENTS, IPC } from '@shared/ipc-channels'
 import type {
@@ -33,7 +31,7 @@ import { trySyncServer } from '@core/metadata/shared-overrides-sync'
 import { discoverSmbServers } from './nas/discovery'
 import { resolveAbsolutePath } from './playback/resolve'
 import { readChapterMarks } from './playback/mkv-chapter-reader'
-import { listExternalPlayers } from './playback/external-players'
+import { listExternalPlayers, openWithPlayer } from './playback/external-players'
 import { previewFrame, probeMedia } from './playback/ffmpeg'
 import { startTranscodeSession, stopTranscodeSession } from './playback/transcode-session'
 import { decidePlaybackPlan } from '@core/playback/media-probe'
@@ -72,8 +70,6 @@ import {
 } from '@core/scanner/scan-orchestrator'
 import { getExtraDetails as fetchExtraDetails, getTvSeasons, searchAsResults, testToken } from '@core/tmdb/client'
 import { desktopImageCache } from './tmdb/image-cache'
-
-const exec = promisify(execFile)
 
 function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -206,7 +202,7 @@ export function registerIpc(): void {
     const { externalPlayerPath } = getConfig()
     if (externalPlayerPath) {
       try {
-        await exec('/usr/bin/open', ['-a', externalPlayerPath, resolved.absPath])
+        await openWithPlayer(externalPlayerPath, resolved.absPath)
         return { ok: true }
       } catch (error) {
         return { ok: false, error: `No se pudo abrir con ${externalPlayerPath}: ${(error as Error).message}` }
@@ -246,11 +242,14 @@ export function registerIpc(): void {
 
   ipcMain.handle(IPC.chooseExternalPlayer, async (): Promise<string | null> => {
     const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const onWindows = process.platform === 'win32'
     const result = await dialog.showOpenDialog(window, {
       title: 'Elige un reproductor',
-      defaultPath: '/Applications',
+      defaultPath: onWindows ? (process.env['ProgramFiles'] ?? 'C:\\Program Files') : '/Applications',
       properties: ['openFile'],
-      filters: [{ name: 'Aplicaciones', extensions: ['app'] }]
+      filters: [
+        onWindows ? { name: 'Programas', extensions: ['exe'] } : { name: 'Aplicaciones', extensions: ['app'] }
+      ]
     })
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })

@@ -101,6 +101,12 @@ select:focus {
   -webkit-app-region: no-drag;
 }
 
+/* Windows y Linux usan la barra de título nativa: sin semáforos no hace falta el hueco. */
+body.os-windows .nav,
+body.os-linux .nav {
+  padding-left: 28px;
+}
+
 .nav-brand {
   font-weight: 800;
   letter-spacing: 0.14em;

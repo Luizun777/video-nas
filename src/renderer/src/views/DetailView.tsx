@@ -327,11 +327,14 @@ export function DetailView(): React.JSX.Element {
               className="btn btn-ghost"
               onClick={() =>
                 void window.api.revealInFinder(item.id).then((result) => {
-                  if (!result.ok) pushToast(result.error ?? 'No se pudo abrir el Finder.', 'error')
+                  if (!result.ok) {
+                    const fileManager = window.api.capabilities.os === 'windows' ? 'el Explorador' : 'el Finder'
+                    pushToast(result.error ?? `No se pudo abrir ${fileManager}.`, 'error')
+                  }
                 })
               }
             >
-              Mostrar en Finder
+              {window.api.capabilities.os === 'windows' ? 'Mostrar en el Explorador' : 'Mostrar en Finder'}
             </button>
           )}
           <span className="spacer" />

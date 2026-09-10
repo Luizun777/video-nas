@@ -20,8 +20,9 @@ export interface ServerConfig {
   host: string
   share: string
   /**
-   * Credenciales SMB, usadas SOLO por Android (el desktop delega en el Llavero de macOS
-   * al montar y las ignora). Viven en el config.json del sandbox de la app.
+   * Credenciales SMB, usadas SOLO por Android (el desktop delega en el sistema al
+   * conectar —Llavero en macOS, Administrador de credenciales en Windows— y las ignora).
+   * Viven en el config.json del sandbox de la app.
    */
   username?: string
   password?: string
@@ -39,11 +40,11 @@ export interface AppConfig {
   tmdbBearerToken: string | null
   language: string
   servers: ServerConfig[]
-  /** Carpeta local de descargas. Default: ~/Movies/Video NAS */
+  /** Carpeta local de descargas. Default: la carpeta de videos del sistema + /Video NAS */
   downloadsPath?: string
   /** Default: 'embedded'. */
   playbackMode: PlaybackMode
-  /** Ruta a un .app concreto. null/ausente = el que macOS tenga asociado. */
+  /** Ruta a un .app (macOS) o .exe (Windows) concreto. null/ausente = el asociado del sistema. */
   externalPlayerPath?: string | null
   /** Default: true. */
   autoPlayNextEpisode: boolean
@@ -416,6 +417,8 @@ export interface DownloadsFile {
 /** Qué sabe hacer la plataforma actual: el renderer oculta lo que no aplique. */
 export interface AppCapabilities {
   platform: 'desktop' | 'android'
+  /** Sistema operativo: para los textos que nombran cosas del sistema (Finder, Explorador…). */
+  os: 'mac' | 'windows' | 'linux' | 'android'
   /** Ventana separada del reproductor (multi-ventana de Electron). */
   separateWindow: boolean
   /** "Mostrar en Finder" o equivalente. */

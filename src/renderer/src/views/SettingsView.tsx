@@ -464,7 +464,7 @@ export function SettingsView(): React.JSX.Element {
               />
               {window.api.capabilities.platform === 'android'
                 ? 'La que Android tenga asociada al video'
-                : 'La que macOS tenga asociada al archivo'}
+                : `La que ${window.api.capabilities.os === 'windows' ? 'Windows' : 'macOS'} tenga asociada al archivo`}
             </label>
             {externalPlayers.map((player) => (
               <label className="radio-row" key={player.path}>
@@ -483,7 +483,7 @@ export function SettingsView(): React.JSX.Element {
             {externalPlayerPath && !externalPlayers.some((p) => p.path === externalPlayerPath) && (
               <label className="radio-row">
                 <input type="radio" name="external-player" checked readOnly />
-                {externalPlayerPath.split('/').pop()?.replace(/\.app$/, '') ?? externalPlayerPath}
+                {externalPlayerPath.split(/[\\/]/).pop()?.replace(/\.(app|exe)$/i, '') ?? externalPlayerPath}
               </label>
             )}
             {window.api.capabilities.chooseExternalPlayerFile && (

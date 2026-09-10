@@ -99,7 +99,11 @@ export function saveConfig(patch: Partial<AppConfig>): AppConfig {
       draft.servers = patch.servers.map((server) => ({
         ...server,
         id: server.id || newServerId(),
-        folders: server.folders.filter((folder) => folder.path.trim().length > 0)
+        // Las carpetas son relPaths del share y acaban en ids y en las claves compartidas
+        // entre dispositivos: siempre con '/', aunque en Windows se escriban con '\'.
+        folders: server.folders
+          .filter((folder) => folder.path.trim().length > 0)
+          .map((folder) => ({ ...folder, path: folder.path.replace(/\\/g, '/') }))
       }))
     }
   })

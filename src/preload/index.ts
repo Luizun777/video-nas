@@ -30,9 +30,13 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
-/** El escritorio lo puede todo; smbCredentials va en false: el Llavero de macOS se encarga. */
+/**
+ * El escritorio lo puede todo; smbCredentials va en false: las credenciales las guarda el
+ * sistema al conectar (Llavero en macOS, Administrador de credenciales en Windows).
+ */
 const DESKTOP_CAPABILITIES: AppCapabilities = {
   platform: 'desktop',
+  os: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux',
   separateWindow: true,
   revealInFiles: true,
   chooseExternalPlayerFile: true,

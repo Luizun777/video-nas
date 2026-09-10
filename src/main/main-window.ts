@@ -13,8 +13,11 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 620,
     show: false,
     backgroundColor: '#0b0b0f',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 18 },
+    // En macOS la barra de título se funde con la nav y los semáforos quedan dentro. En
+    // Windows hiddenInset no existe: barra nativa, oscura por nativeTheme (index.ts).
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

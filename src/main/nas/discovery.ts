@@ -8,6 +8,8 @@ const exec = promisify(execFile)
 const BROWSE_TIMEOUT_MS = 4000
 const PROBE_TIMEOUT_MS = 800
 
+const IS_WINDOWS = process.platform === 'win32'
+
 /**
  * Instancias anunciadas por Bonjour. `dns-sd` bufferiza su salida cuando no escribe a un
  * TTY, así que se lee en streaming y se mata el proceso al vencer el tiempo.
@@ -48,20 +50,33 @@ function browseBonjour(): Promise<string[]> {
   })
 }
 
+/**
+ * IPs de la salida de `arp -a`, sin difusión, multidifusión ni entradas incompletas.
+ * macOS: `? (192.168.1.10) at 0:11:22:33:44:55 on en0`. Windows:
+ * `  192.168.1.10   00-11-22-33-44-55   dinámico`; ahí el tipo sale traducido, así que la
+ * fila se reconoce por la MAC con guiones.
+ */
+export function parseArpTable(output: string): string[] {
+  const ips = new Set<string>()
+  for (const line of output.split(/\r?\n/)) {
+    const match =
+      line.match(/\((\d+\.\d+\.\d+\.\d+)\)/) ??
+      line.match(/^\s*(\d+\.\d+\.\d+\.\d+)\s+[0-9a-f]{2}(?:-[0-9a-f]{2}){5}\s/i)
+    if (!match) continue
+    const ip = match[1]
+    if (line.includes('incomplete')) continue
+    if (ip.endsWith('.255') || Number(ip.split('.')[0]) >= 224) continue
+    ips.add(ip)
+  }
+  return [...ips]
+}
+
 /** Vecinos ya presentes en la tabla ARP: no hace barrido de red, solo lee lo conocido. */
 async function arpNeighbors(): Promise<string[]> {
   try {
-    const { stdout } = await exec('/usr/sbin/arp', ['-a'], { timeout: 5000 })
-    const ips = new Set<string>()
-    for (const line of stdout.split('\n')) {
-      const match = line.match(/\((\d+\.\d+\.\d+\.\d+)\)/)
-      if (!match) continue
-      const ip = match[1]
-      if (line.includes('incomplete')) continue
-      if (ip.endsWith('.255') || ip.startsWith('224.') || ip.startsWith('239.')) continue
-      ips.add(ip)
-    }
-    return [...ips]
+    const arp = IS_WINDOWS ? 'arp.exe' : '/usr/sbin/arp'
+    const { stdout } = await exec(arp, ['-a'], { timeout: 5000 })
+    return parseArpTable(stdout)
   } catch {
     return []
   }
@@ -99,12 +114,16 @@ async function resolveBonjourHost(instance: string): Promise<string | null> {
 
 /**
  * Busca servidores SMB en la red local combinando dos fuentes: anuncios Bonjour y
- * vecinos de la tabla ARP que respondan en el puerto 445.
+ * vecinos de la tabla ARP que respondan en el puerto 445. Windows no trae dns-sd, así
+ * que ahí solo cuenta la tabla ARP.
  */
 export async function discoverSmbServers(): Promise<DiscoveredServer[]> {
   const found = new Map<string, DiscoveredServer>()
 
-  const [instances, neighbors] = await Promise.all([browseBonjour(), arpNeighbors()])
+  const [instances, neighbors] = await Promise.all([
+    IS_WINDOWS ? Promise.resolve<string[]>([]) : browseBonjour(),
+    arpNeighbors()
+  ])
 
   const resolved = await Promise.all(
     instances.map(async (instance) => ({ instance, host: await resolveBonjourHost(instance) }))

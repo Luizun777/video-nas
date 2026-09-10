@@ -17,17 +17,30 @@ asarUnpack:
   - "**/node_modules/ffmpeg-static/**"
   - "**/node_modules/@ffprobe-installer/**"
 
+# ffmpeg-static y @ffprobe-installer instalan SOLO el binario del sistema y la arquitectura
+# donde corrió npm install: cada plataforma se empaqueta en su propia máquina (en CI,
+# .github/workflows/release.yml), nunca en cruzado desde la Mac.
+
 mac:
   category: public.app-category.entertainment
   target:
     - target: dmg
-      arch:
-        # Solo arm64: ffmpeg-static/ffprobe instalan el binario de la arquitectura
-        # donde corrió npm install; un dmg x64 llevaría binarios arm64 rotos.
-        - arm64
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  artifactName: ${name}-${version}-mac-${arch}.${ext}
   darkModeSupport: true
-  # App local sin firmar: sin identidad de desarrollador no hay notarización.
-  identity: null
+  # Sin certificado de desarrollador no hay notarización, pero con la firma ad-hoc macOS
+  # ofrece "Abrir igualmente" en vez de decir que la app descargada "está dañada".
+  # hardenedRuntime rechazaría los frameworks de Electron (firmados por otro equipo).
+  identity: "-"
+  hardenedRuntime: false
 
-dmg:
-  artifactName: ${productName}-${version}-${arch}.${ext}
+win:
+  target:
+    - target: portable
+      arch: [x64]
+
+portable:
+  # Un solo .exe que se ejecuta sin instalar (se descomprime en temp al abrirlo).
+  artifactName: ${name}-${version}-windows-x64-portable.${ext}

@@ -72,8 +72,8 @@ export interface DownloadTransfer {
 /** Lo que el escáner necesita de la plataforma. */
 export interface ScanEnv {
   /**
-   * Conecta con el share del servidor. Desktop: montaje vía Llavero de macOS
-   * (allowPrompt controla si puede abrir el diálogo). Android: sesión SMB con las
+   * Conecta con el share del servidor. Desktop: montaje vía Llavero en macOS o ruta UNC
+   * en Windows (allowPrompt controla si puede abrir el diálogo). Android: sesión SMB con las
    * credenciales guardadas. `fs` es null cuando el servidor no quedó online.
    */
   connect(

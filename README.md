@@ -2,7 +2,7 @@
 
 Catálogo estilo Netflix para las películas y series que tienes en tu NAS. Escanea shares
 SMB, trae portadas y sinopsis de TheMovieDB en español, y las reproduce **dentro de la
-app** — en el Mac y en Android, con la misma biblioteca.
+app** — en Mac, Windows y Android, con la misma biblioteca.
 
 ## Qué hace
 
@@ -41,9 +41,10 @@ Reproduce **cualquier formato**, sin depender de los códecs del navegador:
 - **En Android**: libVLC va embebido en la app. Decodifica lo que el WebView no puede —
   AC3/DTS (habitual en los rips "Dual-Lat"), HEVC 10 bits, DivX, MPEG-2 — y dibuja los
   subtítulos, incluidos los de imagen (PGS).
-- **En macOS**: la app trae ffmpeg. Antes de reproducir analiza el archivo y, si Chromium
-  no puede con él, lo transcodifica al vuelo por hardware (VideoToolbox) copiando el video
-  cuando solo falla el audio, así que arranca enseguida y no pierde calidad.
+- **En macOS y Windows**: la app trae ffmpeg. Antes de reproducir analiza el archivo y, si
+  Chromium no puede con él, lo transcodifica al vuelo (por hardware con VideoToolbox en el
+  Mac) copiando el video cuando solo falla el audio, así que arranca enseguida y no pierde
+  calidad.
 - **Pistas de audio y subtítulos**: menú para cambiar de idioma y activar subtítulos, tanto
   los del archivo como los `.srt`/`.ass` que estén junto al video o en una carpeta `Subs/`.
 - **Vista previa al arrastrar**: la barra de progreso muestra la miniatura del punto al que
@@ -58,7 +59,7 @@ Reproduce **cualquier formato**, sin depender de los códecs del navegador:
   otro al terminar.
 - **Continuar viendo**: recuerda dónde te quedaste en cada archivo.
 - **Reproductor externo** disponible siempre como alternativa manual (VLC, IINA,
-  QuickTime, MX Player…).
+  QuickTime, MPC-HC, PotPlayer, MX Player…).
 
 ### Metadata compartida entre dispositivos
 
@@ -69,9 +70,20 @@ ruta del archivo normalizada, de modo que funciona aunque macOS y Android escrib
 acentos de forma distinta. Si el NAS está apagado o el share es de solo lectura, el cambio
 queda pendiente y se sube en el siguiente escaneo.
 
+## Descargar
+
+En [Releases](https://github.com/Luizun777/video-nas/releases/latest) está lista para usar:
+
+- **macOS (Apple Silicon)**: `video-nas-…-mac-arm64.dmg`
+- **Windows 10/11 (64 bits)**: `video-nas-…-windows-x64-portable.exe`, sin instalación
+
+No está firmada con un certificado de pago, así que la primera vez el sistema avisa. En
+macOS: **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**. En Windows:
+**Más información → Ejecutar de todas formas**. Las notas de cada release traen el detalle.
+
 ## Requisitos
 
-- macOS (Apple Silicon) para la app de escritorio
+- macOS (Apple Silicon) o Windows 10/11 de 64 bits para la app de escritorio
 - Android 8+ para el APK
 - Node.js 20 o superior
 - Un NAS con SMB accesible
@@ -91,17 +103,26 @@ token (el archivo está en `.gitignore`, nunca se sube):
 
 También puedes pegarlo directamente en **Ajustes → TheMovieDB** dentro de la app.
 
-### Escritorio (macOS)
+### Escritorio (macOS y Windows)
 
 ```bash
 npm run dev     # desarrollo
 npm run build   # compilar
-npm run dist    # empaquetar .app
+npm run dist    # empaquetar para el sistema donde corre (Mac: .dmg y .zip; Windows: .exe portable)
 ```
 
-En el primer arranque, la app intenta montar el NAS configurado por defecto y escanea. Si
-el share no está montado, macOS te pedirá usuario y contraseña una vez y los guardará en el
-llavero.
+En el primer arranque, la app intenta conectar el NAS configurado por defecto y escanea. Si
+el sistema aún no tiene acceso al share, macOS te pedirá usuario y contraseña una vez y los
+guardará en el llavero; en Windows se abre el Explorador en `\\servidor\share` para que los
+escribas y marques **Recordar mis credenciales**.
+
+**Publicar una versión**: sube el número en `package.json` y crea el tag. GitHub Actions
+compila en una Mac y en una PC con Windows (cada una con su ffmpeg) y publica la release
+con los dos archivos:
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
 
 ### Android
 
@@ -159,7 +180,7 @@ local, sin abrir puertos ni configurar DNS dinámico:
 
    (Luego aprueba la ruta desde el panel de administración de Tailscale.)
 
-2. **Instala Tailscale** en el Mac o el teléfono e inicia sesión con la misma cuenta.
+2. **Instala Tailscale** en la computadora o el teléfono e inicia sesión con la misma cuenta.
 
 3. **Anota la dirección del NAS en la tailnet**: una IP tipo `100.x.y.z`, o su nombre
    MagicDNS (`nas.tu-tailnet.ts.net`).
@@ -173,8 +194,8 @@ que un 4K puede tardar en arrancar.
 
 ## Dónde se guardan tus datos
 
-En el Mac, `~/Library/Application Support/video-nas/` (en Android, el almacenamiento
-privado de la app):
+En el Mac, `~/Library/Application Support/video-nas/`; en Windows, `%APPDATA%\video-nas\`
+(en Android, el almacenamiento privado de la app):
 
 - `config.json` — token de TheMovieDB y servidores configurados
 - `library.json` — el catálogo escaneado

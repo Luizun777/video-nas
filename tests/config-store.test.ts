@@ -98,4 +98,24 @@ describe('saveConfig', () => {
     expect(result.servers[0].id).toMatch(/^srv_[0-9a-f]{8}$/)
     expect(result.servers[0].folders).toEqual([{ path: 'Movies', kind: 'movie' }])
   })
+
+  it('una carpeta escrita con \\ (Windows) se guarda con / para que los ids coincidan', async () => {
+    const { io } = memoryIO()
+    await initConfigStore(io, PLATFORM)
+
+    const result = saveConfig({
+      servers: [
+        {
+          id: 'srv_x',
+          name: 'N',
+          host: 'h',
+          share: 's',
+          folders: [{ path: 'Peliculas\\Accion', kind: 'movie' }],
+          enabled: true
+        }
+      ]
+    })
+
+    expect(result.servers[0].folders[0].path).toBe('Peliculas/Accion')
+  })
 })

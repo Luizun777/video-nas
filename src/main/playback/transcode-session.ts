@@ -5,7 +5,7 @@ import { ffmpegBinary } from './ffmpeg'
 
 /**
  * Transcodificación al vuelo para lo que Chromium no decodifica (DivX, MPEG-2, DTS…):
- * ffmpeg lee desde -ss y escupe fMP4 (H.264 VideoToolbox o copia + AAC estéreo) por
+ * ffmpeg lee desde -ss y escupe fMP4 (H.264 recodificado o copia + AAC estéreo) por
  * stdout, servido como stream NO buscable por videofile://transcode. El seek lo finge
  * el motor del renderer: mata la sesión y arranca otra en la nueva posición.
  *
@@ -31,6 +31,12 @@ interface Session {
 
 let current: Session | null = null
 
+/** H.264 por hardware (VideoToolbox) solo existe en macOS; en Windows, x264 por software. */
+const VIDEO_ENCODE_ARGS =
+  process.platform === 'darwin'
+    ? ['-c:v', 'h264_videotoolbox', '-b:v', '8M', '-pix_fmt', 'yuv420p']
+    : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p']
+
 export function startTranscodeSession(options: TranscodeOptions): { sessionId: string } {
   stopTranscodeSession()
 
@@ -41,7 +47,7 @@ export function startTranscodeSession(options: TranscodeOptions): { sessionId: s
   if (options.videoCopy) {
     args.push('-c:v', 'copy')
   } else {
-    args.push('-c:v', 'h264_videotoolbox', '-b:v', '8M', '-pix_fmt', 'yuv420p')
+    args.push(...VIDEO_ENCODE_ARGS)
   }
   args.push('-c:a', 'aac', '-ac', '2', '-b:a', '192k')
   args.push('-movflags', 'frag_keyframe+empty_moov+default_base_moof', '-f', 'mp4', 'pipe:1')

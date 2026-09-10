@@ -1,7 +1,7 @@
-# video-nas — Catálogo tipo Netflix para NAS (macOS + Android)
+# video-nas — Catálogo tipo Netflix para NAS (macOS + Windows + Android)
 
 App que escanea shares SMB de uno o varios NAS, identifica películas y series contra
-TheMovieDB (es-MX) y las reproduce. Corre como app de escritorio (Electron, macOS) y
+TheMovieDB (es-MX) y las reproduce. Corre como app de escritorio (Electron, macOS y Windows) y
 como APK Android (Capacitor) compartiendo el renderer y toda la lógica de `src/core`.
 
 ## Stack
@@ -19,7 +19,8 @@ npm run dev         # app de escritorio en modo desarrollo (HMR)
 npm test            # tests de core (parser, grouper, identifier, http-range, config)
 npm run typecheck   # tsc sobre node (main/core) y web (renderer/core/mobile)
 npm run build       # typecheck + build de producción de escritorio a out/
-npm run dist        # empaqueta .app de macOS con electron-builder
+npm run dist        # empaqueta para el SO actual (macOS: dmg+zip arm64; Windows: .exe portable)
+git tag vX.Y.Z && git push origin vX.Y.Z  # Actions compila Mac + Windows y publica la release
 
 npm run dev:mobile      # preview móvil en navegador con API mock (puerto 5199,
                         # abrir /index.mobile.html)
@@ -60,10 +61,20 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
   que quitar el filtro temporalmente.
 - **ffmpeg/ffprobe del desktop** vienen de `ffmpeg-static` + `@ffprobe-installer/ffprobe`
   (dependencies, NO devDependencies), van como `external` en el build de main y
-  `asarUnpack` en electron-builder (un binario dentro del asar no ejecuta). El dmg es
-  SOLO arm64: esos paquetes instalan el binario de la arquitectura donde corrió
-  `npm install`. Ojo: `ffprobe-static` trae un binario darwin/arm64 de arquitectura
-  equivocada; por eso se usa `@ffprobe-installer/ffprobe`.
+  `asarUnpack` en electron-builder (un binario dentro del asar no ejecuta). Esos paquetes
+  instalan el binario del SO y la arquitectura donde corrió `npm install`: por eso el dmg
+  es SOLO arm64 y **cada plataforma se empaqueta en su propia máquina**
+  (`.github/workflows/release.yml`: macos-latest y windows-latest). Nunca empaquetes
+  Windows en cruzado desde la Mac: el .exe llevaría binarios de Mac y el main revienta al
+  importar `@ffprobe-installer/ffprobe`. Ojo: `ffprobe-static` trae un binario
+  darwin/arm64 de arquitectura equivocada; por eso se usa `@ffprobe-installer/ffprobe`.
+- **Windows no monta shares**: `mount-manager.ts` usa la ruta UNC `\\host\share` como
+  punto de montaje (con caché de acceso: se consulta en cada petición Range) y, si Windows
+  aún no tiene sesión, abre `explorer.exe \\host\share` para que el sistema pida y
+  recuerde las credenciales — el equivalente del `open smb://` + Llavero de macOS. Lo
+  específico de cada SO vive en `src/main` detrás de `process.platform` (montaje,
+  descubrimiento, reproductores externos, codificador del transcode, ventana); el
+  renderer solo ve `capabilities.os` para los textos (Finder/Explorador).
 - **NUNCA pongas `crossOrigin` en el `<video>` del desktop.** El esquema `videofile://`
   no está registrado con `corsEnabled`, así que marcar el elemento como cross-origin
   hace que Chromium rechace TODOS los formatos con `MEDIA_ELEMENT_ERROR: Format error`
@@ -78,8 +89,8 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
   nunca en core: los ids del desktop se construyeron con el NFD de macOS y no deben
   cambiar.
 - **Las credenciales SMB (`ServerConfig.username/password/domain`) son solo de Android**;
-  el desktop sigue delegando en el Llavero al montar. Prohibido loguearlas (logcat
-  incluido).
+  el desktop delega en el sistema al conectar (Llavero en macOS, Administrador de
+  credenciales en Windows). Prohibido loguearlas (logcat incluido).
 - **El token de TheMovieDB nunca va en el código fuente ni en git.** Vive en
   `seed.config.json` (gitignored) para desarrollo, y en `config.json` de userData en
   runtime. La app debe funcionar **completamente sin token** (modo sin API key).
@@ -103,7 +114,7 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
 
 ## Datos en runtime
 
-`~/Library/Application Support/video-nas/`
+`~/Library/Application Support/video-nas/` (macOS) · `%APPDATA%\video-nas\` (Windows)
 
 - `config.json` — token de TMDB y lista de servidores NAS
 - `library.json` — catálogo escaneado (clave: `"${serverId}:${relPath}"`)
@@ -139,6 +150,8 @@ src/renderer/  src/{components,views,modals,store,styles} — compartido tal cua
 android/       proyecto Capacitor; los plugins viven en app/src/main/java/com/luizun/videonas/
                (NasPlugin, SmbClientManager, StreamServer, VlcPlayerPlugin, VlcPlayerManager)
 tests/         módulos puros de core (corren sin Electron ni Android)
+.github/       workflows/release.yml (compila Mac + Windows, publica la release con tag v*)
+               y release-notes.md (instrucciones de descarga y primer arranque)
 ```
 
 ## Lecciones aprendidas
@@ -253,3 +266,9 @@ tests/         módulos puros de core (corren sin Electron ni Android)
   a partir del minuto ~55 (`invalid as first byte of an EBML number` sobre los 3 GB) y
   ahí fallan por igual Chromium, el transcode y ffmpeg. Antes de perseguir un bug,
   correr `ffmpeg -ss N -i archivo -t 8 -f null -` sobre la zona sospechosa.
+- Para probar el `.app` empaquetado sin tocar la biblioteca real ni chocar con una
+  instancia abierta: lanzar el binario con `HOME` y `CFFIXED_USER_HOME` apuntando a un
+  directorio temporal, más `--user-data-dir=<tmp>/Library/Application Support/video-nas`
+  y `--remote-debugging-port`. userData y el bloqueo de instancia única quedan aislados
+  (verificado: el config se crea en el temporal y los mtime de los JSON reales no cambian).
+  Y no borres `release/` sin mirar si hay una app abierta desde ahí.

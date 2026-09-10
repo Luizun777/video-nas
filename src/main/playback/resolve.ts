@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { normalize } from 'node:path'
 import { getItem } from '@core/stores/library-store'
 import { getServerById } from '@core/stores/config-store'
 import { getLocalCopy } from '@core/downloads/download-manager'
@@ -25,7 +26,9 @@ export async function resolveAbsolutePath(
   // getLocalCopy ya no toca disco (core no tiene fs): la comprobación vive aquí, para
   // que una copia borrada por fuera a mitad de sesión caiga de vuelta al NAS.
   const localCopy = getLocalCopy(itemId, target)
-  if (localCopy && existsSync(localCopy)) return { absPath: localCopy }
+  // normalize: en Windows la copia llega con separadores mezclados (C:\…\Video NAS/Movies/x.mkv),
+  // que el shell del sistema no siempre acepta y que rompen la comparación de rutas de subtítulos.
+  if (localCopy && existsSync(localCopy)) return { absPath: normalize(localCopy) }
 
   const server = getServerById(item.serverId)
   if (!server) return { error: 'El servidor de este título ya no está configurado.' }

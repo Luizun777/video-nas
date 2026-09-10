@@ -3,7 +3,8 @@ import { dirname, join } from 'node:path'
 import type { FsAdapter, FsEntry } from '@core/io'
 
 /**
- * FsAdapter de escritorio: la raíz es el punto de montaje del share en /Volumes.
+ * FsAdapter de escritorio: la raíz es el punto de montaje del share (/Volumes/… en macOS,
+ * la ruta UNC \\host\share en Windows).
  * Los symlinks se tratan como archivos (stat sigue el enlace), igual que el walker
  * original: un symlink a directorio NO se recorre.
  */

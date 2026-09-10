@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import { join, normalize } from 'node:path'
 import { Readable } from 'node:stream'
-import { app, BrowserWindow, protocol } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, protocol } from 'electron'
 import { registerIpc } from './ipc'
 import { createMainWindow } from './main-window'
 import { initConfigStore } from '@core/stores/config-store'
@@ -24,6 +24,18 @@ import { cacheRoot, ensureCacheDirs } from './tmdb/image-cache'
 // Expone video.audioTracks (cambio de pista de audio en vivo): Chromium lo tiene
 // implementado pero detrás de esta blink feature.
 app.commandLine.appendSwitch('enable-blink-features', 'AudioVideoTracks')
+
+// Dos procesos escribirían a la vez los mismos JSON de userData (en Windows, abrir otra
+// vez el .exe lanza otro proceso): la segunda instancia solo enfoca la ventana abierta.
+const isPrimaryInstance = app.requestSingleInstanceLock()
+if (!isPrimaryInstance) app.quit()
+
+app.on('second-instance', () => {
+  const [window] = BrowserWindow.getAllWindows()
+  if (!window) return
+  if (window.isMinimized()) window.restore()
+  window.focus()
+})
 
 // Las portadas se sirven por un protocolo propio en lugar de file://, para no tener
 // que desactivar webSecurity en el renderer.
@@ -70,6 +82,8 @@ function registerMediaCacheProtocol(): void {
 }
 
 void app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return
+
   registerMediaCacheProtocol()
   registerVideoFileProtocol()
 
@@ -89,6 +103,13 @@ void app.whenReady().then(async () => {
   initScanner(desktopScanEnv)
   initSharedOverridesSync(desktopScanEnv)
   registerIpc()
+
+  if (process.platform !== 'darwin') {
+    // El menú por defecto de Electron sale en inglés y deja a mano Recargar y DevTools.
+    Menu.setApplicationMenu(null)
+    // La barra de título nativa (Windows) va oscura, como la app.
+    nativeTheme.themeSource = 'dark'
+  }
   createMainWindow()
 
   // Al arrancar: comprobar servidores y lanzar un escaneo incremental.
@@ -109,6 +130,8 @@ app.on('window-all-closed', () => {
 // (el que guarda dónde te quedaste al cerrar) se puede perder. El ffmpeg de una
 // sesión de transcode viva tampoco muere solo con el proceso padre.
 app.on('before-quit', () => {
+  // La instancia secundaria sale antes de inicializar los stores: no hay nada que guardar.
+  if (!isPrimaryInstance) return
   void flushProgress()
   stopTranscodeSession()
 })

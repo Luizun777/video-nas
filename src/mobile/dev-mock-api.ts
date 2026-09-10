@@ -210,6 +210,7 @@ export function installMockApi(): void {
   const api: IpcApi = {
     capabilities: {
       platform: 'android',
+      os: 'android',
       separateWindow: false,
       revealInFiles: false,
       chooseExternalPlayerFile: false,

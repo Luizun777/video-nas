@@ -1,5 +1,5 @@
-import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { execFile, spawn } from 'node:child_process'
+import { existsSync, promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { lookup } from 'node:dns/promises'
@@ -11,6 +11,11 @@ const exec = promisify(execFile)
 const PORT_CHECK_TIMEOUT_MS = 4000
 const MOUNT_POLL_INTERVAL_MS = 2000
 const MOUNT_TIMEOUT_MS = 60_000
+
+const IS_WINDOWS = process.platform === 'win32'
+/** getMountPoint corre en cada petición Range: un acceso UNC ya comprobado vale este rato. */
+const UNC_VERIFIED_TTL_MS = 30_000
+const UNC_READ_TIMEOUT_MS = 8000
 
 export interface SmbMount {
   host: string
@@ -65,8 +70,13 @@ async function hostsMatch(mountHost: string, configHost: string): Promise<boolea
   return ipA !== null && ipA === ipB
 }
 
-/** Devuelve el punto de montaje real del servidor, o null si no está montado. */
+/**
+ * Devuelve el punto de montaje real del servidor, o null si no está montado. En Windows
+ * no hay montaje: es la ruta UNC del share, si el sistema ya tiene acceso a ella.
+ */
 export async function getMountPoint(server: ServerConfig): Promise<string | null> {
+  if (IS_WINDOWS) return (await uncAccessible(server)) ? uncRoot(server) : null
+
   let output: string
   try {
     const result = await exec('/sbin/mount', [], { timeout: 5000 })
@@ -105,12 +115,57 @@ export function isReachable(host: string, timeoutMs = PORT_CHECK_TIMEOUT_MS): Pr
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
+ * Windows no monta: el share se lee directo por su ruta UNC (\\host\share) y la sesión
+ * SMB, con sus credenciales, la guarda el sistema (Administrador de credenciales).
+ */
+function uncRoot(server: ServerConfig): string {
+  return `\\\\${server.host}\\${server.share.replace(/\//g, '\\')}`
+}
+
+const uncVerifiedAt = new Map<string, number>()
+
+/**
+ * ¿Windows ya tiene acceso al share? Primero el puerto 445: leer el UNC de un host caído
+ * bloquea decenas de segundos (y de paso un hilo del pool de libuv).
+ */
+async function uncAccessible(server: ServerConfig): Promise<boolean> {
+  const root = uncRoot(server)
+  const verifiedAt = uncVerifiedAt.get(root)
+  if (verifiedAt !== undefined && Date.now() - verifiedAt < UNC_VERIFIED_TTL_MS) return true
+
+  const accessible =
+    (await isReachable(server.host)) &&
+    (await Promise.race([
+      fs.readdir(root).then(
+        () => true,
+        () => false
+      ),
+      delay(UNC_READ_TIMEOUT_MS).then(() => false)
+    ]))
+
+  if (accessible) uncVerifiedAt.set(root, Date.now())
+  else uncVerifiedAt.delete(root)
+  return accessible
+}
+
+/**
+ * Equivalente Windows de `open smb://`: el Explorador pide usuario y contraseña si hace
+ * falta y los recuerda. explorer.exe sale con código 1 aunque funcione: no se espera.
+ */
+function openInExplorer(uncPath: string): void {
+  const child = spawn('explorer.exe', [uncPath], { detached: true, stdio: 'ignore' })
+  child.on('error', () => {})
+  child.unref()
+}
+
+/**
  * Asegura que el share esté montado.
  *
  * 1. ¿Ya montado? (match por host + share, devuelve el punto de montaje real, que puede
- *    ser /Volumes/video-1 tras un remontaje)
+ *    ser /Volumes/video-1 tras un remontaje; en Windows, si el UNC ya se puede leer)
  * 2. Pre-check del puerto 445: si no responde, se marca offline sin lanzar diálogos.
- * 3. `open smb://host/share` dispara el diálogo/llavero de macOS y se espera al montaje.
+ * 3. macOS: `open smb://host/share` dispara el diálogo/llavero y se espera al montaje.
+ *    Windows: el Explorador abre \\host\share (pide credenciales) y se espera al acceso.
  */
 export async function ensureMounted(
   server: ServerConfig,
@@ -138,17 +193,21 @@ export async function ensureMounted(
     return {
       serverId: server.id,
       state: 'offline',
-      message: 'El servidor responde pero el share no está montado.'
+      message: IS_WINDOWS
+        ? 'El servidor responde pero Windows aún no tiene acceso al share.'
+        : 'El servidor responde pero el share no está montado.'
     }
   }
 
+  const address = IS_WINDOWS ? uncRoot(server) : `smb://${server.host}/${server.share}`
   try {
-    await exec('/usr/bin/open', [`smb://${server.host}/${server.share}`], { timeout: 10_000 })
+    if (IS_WINDOWS) openInExplorer(address)
+    else await exec('/usr/bin/open', [address], { timeout: 10_000 })
   } catch {
     return {
       serverId: server.id,
       state: 'offline',
-      message: `No se pudo abrir smb://${server.host}/${server.share}`
+      message: `No se pudo abrir ${address}`
     }
   }
 
