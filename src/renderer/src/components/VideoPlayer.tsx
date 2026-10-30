@@ -445,7 +445,9 @@ export function VideoPlayer({
    */
   const handleError = (reason: EngineError['reason']): void => {
     handleClose()
-    if (reason === 'codec') {
+    if (reason === 'codec' && !window.api.capabilities.externalPlayer) {
+      pushToast('Este formato no se puede reproducir en este navegador.', 'error')
+    } else if (reason === 'codec') {
       void playExternal(itemId, effectiveRelPath)
       pushToast(
         'Este formato no es compatible con el reproductor integrado. Se abrió en tu reproductor externo.'

@@ -7,7 +7,7 @@ interface Props {
 }
 
 /** Botón de descarga con sus 4 estados: sin descargar, en curso, con error, completada. */
-export function DownloadButton({ itemId, relPath, className }: Props): React.JSX.Element {
+export function DownloadButton({ itemId, relPath, className }: Props): React.JSX.Element | null {
   const downloads = useAppStore((s) => s.downloads)
   const startDownload = useAppStore((s) => s.startDownload)
   const cancelDownload = useAppStore((s) => s.cancelDownload)
@@ -15,6 +15,9 @@ export function DownloadButton({ itemId, relPath, className }: Props): React.JSX
 
   const cls = className ?? 'btn btn-ghost btn-sm'
   const entry = downloadFor(downloads, itemId, relPath)
+
+  // La versión web no guarda copias: descargaría en la Mac, no en este dispositivo.
+  if (!window.api.capabilities.offlineDownloads) return null
 
   if (!entry) {
     return (

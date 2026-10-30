@@ -50,6 +50,22 @@ export interface AppConfig {
   autoPlayNextEpisode: boolean
   /** Default: true. */
   autoSkipIntro: boolean
+  /** Solo desktop: servidor HTTP para ver el catálogo desde un navegador de la LAN. Default: apagado. */
+  lanServer?: LanServerConfig
+}
+
+export interface LanServerConfig {
+  enabled: boolean
+  port: number
+}
+
+/** Estado del servidor LAN, para mostrar en Ajustes las direcciones a abrir. */
+export interface LanServerInfo {
+  running: boolean
+  port: number
+  /** http://IP:puerto por cada interfaz IPv4 de la LAN. */
+  urls: string[]
+  error?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -416,9 +432,9 @@ export interface DownloadsFile {
 
 /** Qué sabe hacer la plataforma actual: el renderer oculta lo que no aplique. */
 export interface AppCapabilities {
-  platform: 'desktop' | 'android'
+  platform: 'desktop' | 'android' | 'web'
   /** Sistema operativo: para los textos que nombran cosas del sistema (Finder, Explorador…). */
-  os: 'mac' | 'windows' | 'linux' | 'android'
+  os: 'mac' | 'windows' | 'linux' | 'android' | 'web'
   /** Ventana separada del reproductor (multi-ventana de Electron). */
   separateWindow: boolean
   /** "Mostrar en Finder" o equivalente. */
@@ -428,6 +444,14 @@ export interface AppCapabilities {
   /** La plataforma necesita usuario/contraseña SMB por servidor. */
   smbCredentials: boolean
   mdnsDiscovery: boolean
+  /** Abrir el archivo en un reproductor externo (VLC…) del mismo dispositivo. */
+  externalPlayer: boolean
+  /** Descargar copias locales para ver sin el NAS. */
+  offlineDownloads: boolean
+  /** Editar token, servidores y reproductor. La web (cliente LAN) solo los ve en la Mac. */
+  manageConfig: boolean
+  /** Puede compartir el catálogo en la LAN (servidor HTTP integrado). */
+  lanServer: boolean
 }
 
 export interface PlaybackProgressEntry {
@@ -536,4 +560,7 @@ export interface IpcApi {
   onDownloads(cb: (entries: DownloadEntry[]) => void): () => void
   onQueue(cb: (entries: QueueEntry[]) => void): () => void
   onPlayerAttach(cb: (target: PlayTarget) => void): () => void
+
+  /** Solo desktop: estado del servidor LAN (capabilities.lanServer). */
+  getLanServerInfo?(): Promise<LanServerInfo>
 }

@@ -2,7 +2,8 @@
 
 Catálogo estilo Netflix para las películas y series que tienes en tu NAS. Escanea shares
 SMB, trae portadas y sinopsis de TheMovieDB en español, y las reproduce **dentro de la
-app** — en Mac, Windows y Android, con la misma biblioteca.
+app** — en Mac, Windows y Android, con la misma biblioteca. Y desde cualquier navegador de
+tu casa con la [versión web en la LAN](#versión-web-en-tu-red-lan).
 
 ## Qué hace
 
@@ -140,6 +141,32 @@ En Android las credenciales SMB se escriben en **Ajustes** (no hay llavero del s
 las aporte). El reproductor se bloquea en horizontal mientras ves algo y libera la
 orientación al minimizar.
 
+### Versión web en tu red (LAN)
+
+La app de escritorio puede compartir el catálogo con cualquier navegador de tu casa
+(teléfono, iPad, tele, otra computadora) sin instalar nada en ellos:
+
+1. En la app de la Mac o Windows, abre **Ajustes → Versión web en tu red (LAN)** y marca
+   **Compartir el catálogo en la red**.
+2. Ajustes muestra la dirección a abrir, por ejemplo `http://192.168.1.20:8787`.
+3. Ábrela en el navegador de cualquier dispositivo conectado a la misma red.
+
+Cómo funciona: la app de escritorio sigue siendo la que lee el NAS. El navegador recibe
+el mismo catálogo, con portadas, "continuar viendo", cola y correcciones de metadata,
+y el video con salto libre por la barra. Si el navegador no soporta el formato, por
+ejemplo audio AC3/DTS o DivX, la app lo convierte al vuelo con ffmpeg.
+
+- **La app de escritorio tiene que estar abierta** y la computadora despierta mientras ves.
+- **No pide contraseña**: cualquiera conectado a tu red puede ver el catálogo. El servidor
+  rechaza conexiones que no vengan de una red privada (LAN o Tailscale), y el token de
+  TheMovieDB, los servidores y las carpetas nunca salen de la app ni se cambian desde
+  el navegador.
+- Desde el navegador no hay descargas offline ni reproductor externo: eso queda en la app.
+- Si el puerto 8787 está ocupado, cámbialo en la misma sección. La primera vez, macOS o
+  Windows pueden pedir permiso para aceptar conexiones entrantes: acéptalo.
+- Fuera de casa funciona igual con Tailscale instalado en el teléfono: abre
+  `http://<IP-de-Tailscale-de-la-Mac>:8787`.
+
 ## Cómo organiza tus archivos
 
 La app entiende los nombres tal como suelen estar en un NAS, sin pedirte que renombres nada:
@@ -212,6 +239,10 @@ Borrar `library.json` y volver a escanear es seguro: las correcciones viven en
 npm test         # módulos puros: parser de nombres, agrupador, numeración de episodios,
                  # contrato Range, capítulos MKV, metadata compartida…
 npm run typecheck
+npm run build:web  # bundle de la versión web (out/web); `npm run build` ya lo incluye
 ```
+
+En `npm run dev` el servidor LAN sirve el último `out/web` compilado: corre
+`npm run build:web` antes de probar la versión web.
 
 Ver [CLAUDE.md](CLAUDE.md) para la arquitectura y las convenciones del proyecto.

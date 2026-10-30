@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "npm run typecheck && electron-vite build && npm run build:web",
+    "build:web": "vite build --config vite.config.web.ts",
     "dist": "npm run build && electron-builder --config electron-builder.yml --publish never",
     "icons": "node scripts/generate-icons.mjs",
     "dev:mobile": "vite --config vite.config.mobile.ts",

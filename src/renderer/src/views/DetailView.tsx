@@ -315,13 +315,15 @@ export function DetailView(): React.JSX.Element {
           <button className="btn" onClick={() => openEditor(item.id)}>
             Editar información
           </button>
-          <button
-            className="btn btn-ghost"
-            onClick={() => void playExternal(item.id)}
-            title="Abre este título en VLC u otro reproductor instalado"
-          >
-            Reproductor externo
-          </button>
+          {window.api.capabilities.externalPlayer && (
+            <button
+              className="btn btn-ghost"
+              onClick={() => void playExternal(item.id)}
+              title="Abre este título en VLC u otro reproductor instalado"
+            >
+              Reproductor externo
+            </button>
+          )}
           {window.api.capabilities.revealInFiles && (
             <button
               className="btn btn-ghost"

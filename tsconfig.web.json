@@ -18,6 +18,7 @@
       "@shared/*": ["./src/shared/*"],
       "@core/*": ["./src/core/*"],
       "@mobile/*": ["./src/mobile/*"],
+      "@web/*": ["./src/web/*"],
       "@/*": ["./src/renderer/src/*"]
     }
   },
@@ -26,6 +27,7 @@
     "src/shared/**/*",
     "src/preload/**/*",
     "src/core/**/*",
-    "src/mobile/**/*"
+    "src/mobile/**/*",
+    "src/web/**/*"
   ]
 }

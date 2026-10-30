@@ -43,6 +43,13 @@ export function parseVideoStreamUrl(url: string): { itemId: string; relPath?: st
 // Los subtítulos NO viajan por aquí a propósito: irían a un <track>, que obligaría a
 // marcar el <video> con crossOrigin y eso rompe toda la reproducción (ver CLAUDE.md).
 
+// La web (cliente LAN) lo cambia por la ruta HTTP del servidor de la Mac.
+let transcodeUrlBase = 'videofile://transcode'
+
+export function setTranscodeUrlBase(base: string): void {
+  transcodeUrlBase = base
+}
+
 export function transcodeSessionUrl(sessionId: string): string {
-  return `videofile://transcode?${new URLSearchParams({ session: sessionId }).toString()}`
+  return `${transcodeUrlBase}?${new URLSearchParams({ session: sessionId }).toString()}`
 }

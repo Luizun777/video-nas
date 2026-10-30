@@ -93,7 +93,11 @@ const ANDROID_CAPABILITIES: AppCapabilities = {
   revealInFiles: false,
   chooseExternalPlayerFile: false,
   smbCredentials: true,
-  mdnsDiscovery: false
+  mdnsDiscovery: false,
+  externalPlayer: true,
+  offlineDownloads: true,
+  manageConfig: true,
+  lanServer: false
 }
 
 async function configurePlugin(config: AppConfig): Promise<void> {

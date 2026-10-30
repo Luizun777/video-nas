@@ -2,7 +2,9 @@
 
 App que escanea shares SMB de uno o varios NAS, identifica películas y series contra
 TheMovieDB (es-MX) y las reproduce. Corre como app de escritorio (Electron, macOS y Windows) y
-como APK Android (Capacitor) compartiendo el renderer y toda la lógica de `src/core`.
+como APK Android (Capacitor) compartiendo el renderer y toda la lógica de `src/core`. La app
+de escritorio además sirve una **versión web** a los navegadores de la LAN (servidor HTTP
+integrado, se activa en Ajustes).
 
 ## Stack
 
@@ -18,7 +20,8 @@ como APK Android (Capacitor) compartiendo el renderer y toda la lógica de `src/
 npm run dev         # app de escritorio en modo desarrollo (HMR)
 npm test            # tests de core (parser, grouper, identifier, http-range, config)
 npm run typecheck   # tsc sobre node (main/core) y web (renderer/core/mobile)
-npm run build       # typecheck + build de producción de escritorio a out/
+npm run build       # typecheck + build de producción de escritorio a out/ (incluye out/web)
+npm run build:web   # solo el bundle de la versión web (out/web, lo sirve el servidor LAN)
 npm run dist        # empaqueta para el SO actual (macOS: dmg+zip arm64; Windows: .exe portable)
 git tag vX.Y.Z && git push origin vX.Y.Z  # Actions compila Mac + Windows y publica la release
 npm run icons       # regenera build/icon.{icns,ico,png} y los mipmaps de Android desde el SVG
@@ -98,6 +101,21 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
   runtime. La app debe funcionar **completamente sin token** (modo sin API key).
 - **Los tipos compartidos van solo en `src/shared/`.** main, preload y renderer se
   tipan contra `src/shared/types.ts`; nadie redefine shapes localmente.
+- **La versión web NO tiene backend propio**: es el renderer con `src/web/api.ts`
+  (window.api por `fetch` a `/api/rpc/<canal>` + SSE en `/api/events`) contra
+  `src/main/web/lan-server.ts`, que corre los MISMOS handlers de `ipc.ts` (se registran con
+  `handle()` de `rpc-registry.ts`, nunca con `ipcMain.handle` directo). Solo los canales de
+  `ALLOWED_CHANNELS` llegan a la LAN; `getConfig` sale con el token enmascarado y
+  `saveConfig` solo acepta preferencias de reproducción. Video, transcode y portadas son
+  rutas del mismo origen (`/media/...`, reutilizan `handleStream`/`handleTranscode`/
+  `serveCacheFile`): nada de CORS. Filtros: cliente de red privada, Host de LAN (contra DNS
+  rebinding) y Origin igual al Host en los POST. No sirve para Vercel ni hosting en la nube:
+  un HTTPS público no puede alcanzar el SMB ni pedirle datos a una IP de la LAN.
+- **Las capacidades de la plataforma deciden la UI** (`AppCapabilities`): la web va con
+  `platform: 'web'` y `manageConfig`/`offlineDownloads`/`externalPlayer` en false. Nada de
+  `if (web)` sueltos en el renderer.
+- **Una sesión de transcode por dueño** (`'desktop'` o `'lan:<ip>'`): abrir otra mata solo
+  la anterior de ese mismo dueño, para que la Mac y los navegadores no se pisen.
 - **`name-parser.ts` y `grouper.ts` son puros**: sin imports de electron ni de fs, para
   que vitest los pruebe directamente. Toda la lógica de nombres raros vive ahí.
 - **El escaneo nunca pisa las correcciones del usuario.** `overrides.json` es un archivo
@@ -123,6 +141,7 @@ El tooling Android vive fuera de brew (ver Lecciones): JDK 21 en
 - `overrides.json` — correcciones manuales de metadata (con `setAt`/`syncedAt` de sync)
 - `progress.json` — "continuar viendo" (ambas plataformas desde F10)
 - `cache/posters/`, `cache/backdrops/` — imágenes descargadas, servidas por `mediacache://`
+  (y por `/media/cache/` del servidor LAN)
 
 Y en el NAS, por share: `.video-nas/overrides.json` — correcciones compartidas entre
 dispositivos (el walker ignora dotdirs, nunca aparece en el catálogo).
@@ -141,14 +160,17 @@ src/core/      lógica compartida SIN plataforma: io.ts (interfaces), scanner/, 
 src/main/      solo Electron: index.ts, ipc.ts, adapters/ (Node impls de core/io),
                nas/ (mount por Llavero, discovery), playback/ (protocolos stream/subs/
                transcode, ffmpeg, subtitle-extractor, transcode-session, ventana)
+src/main/web/  lan-server.ts (versión web: estáticos + RPC + SSE + media) y rpc-registry.ts
 src/preload/   index.ts (contextBridge + DESKTOP_CAPABILITIES)
+src/web/       api.ts: window.api del navegador (fetch + EventSource) — cliente de lan-server
 src/mobile/    solo Android/preview: boot.ts, api.ts (window.api completo en WebView),
                nas-plugin.ts y vlc-player-plugin.ts (contratos de plugins),
                vlc-engine.ts (PlaybackEngine sobre libVLC), adapters/ (Capacitor impls),
                playback.ts (URLs del puente), dev-mock-api.ts (preview en navegador)
 src/renderer/  src/{components,views,modals,store,styles} — compartido tal cual;
                src/player/ (PlaybackEngine + HtmlVideoEngine + registry + surface);
-               index.html (desktop) e index.mobile.html (Android)
+               index.html (desktop), index.mobile.html (Android) e index.web.html (LAN,
+               lo compila vite.config.web.ts a out/web)
 android/       proyecto Capacitor; los plugins viven en app/src/main/java/com/luizun/videonas/
                (NasPlugin, SmbClientManager, StreamServer, VlcPlayerPlugin, VlcPlayerManager)
 tests/         módulos puros de core (corren sin Electron ni Android)
@@ -276,6 +298,14 @@ build/         icon.icns, icon.ico, icon.png: generados, electron-builder los to
   y `--remote-debugging-port`. userData y el bloqueo de instancia única quedan aislados
   (verificado: el config se crea en el temporal y los mtime de los JSON reales no cambian).
   Y no borres `release/` sin mirar si hay una app abierta desde ahí.
+- El panel de navegador integrado de Claude (y cualquier navegador sin salida de audio)
+  falla CUALQUIER `<video>` con sonido con `PipelineStatus::AUDIO_RENDERER_ERROR` (code 3),
+  y el motor lo trata como códec: transcode → error. No es de la app: para probar la
+  versión web ahí, silenciar los `<video>` (`muted`) antes de reproducir.
+- Para probar el servidor LAN sin tocar tu biblioteca: copiar los JSON y `cache/` de
+  userData a un temporal, poner `lanServer.enabled` en su config.json y lanzar
+  `npx electron-vite dev -- --user-data-dir=<tmp>` (la instancia única va por userData,
+  así que convive con la app empaquetada abierta).
 - Rasterizar SVG a PNG con alpha en esta Mac (no hay rsvg ni ImageMagick): dibujar el SVG
   en un `<canvas>` desde una ventana oculta de Electron (`executeJavaScript` →
   `toDataURL`). Chrome headless `--screenshot` se cuelga, y el offscreen de Electron

@@ -20,7 +20,7 @@ function deny(body: string, status: number, headers: Record<string, string> = {}
   return new Response(body, { status, headers })
 }
 
-async function handleStream(request: Request): Promise<Response> {
+export async function handleStream(request: Request): Promise<Response> {
   const parsed = parseVideoStreamUrl(request.url)
   if (!parsed) return deny('URL inválida', 400)
 
@@ -60,7 +60,7 @@ async function handleStream(request: Request): Promise<Response> {
   })
 }
 
-function handleTranscode(request: Request): Response {
+export function handleTranscode(request: Request): Response {
   const url = new URL(request.url)
   const sessionId = url.searchParams.get('session')
   const stream = sessionId ? takeSessionStream(sessionId) : null

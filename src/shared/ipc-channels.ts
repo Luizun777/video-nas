@@ -52,7 +52,9 @@ export const IPC = {
   getPreviewFrame: 'playback:preview-frame',
   probeMedia: 'playback:probe',
   startTranscode: 'transcode:start',
-  stopTranscode: 'transcode:stop'
+  stopTranscode: 'transcode:stop',
+
+  getLanServerInfo: 'lan-server:info'
 } as const
 
 export const EVENTS = {

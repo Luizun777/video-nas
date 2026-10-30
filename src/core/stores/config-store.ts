@@ -95,6 +95,7 @@ export function saveConfig(patch: Partial<AppConfig>): AppConfig {
       draft.autoPlayNextEpisode = patch.autoPlayNextEpisode
     }
     if (patch.autoSkipIntro !== undefined) draft.autoSkipIntro = patch.autoSkipIntro
+    if (patch.lanServer !== undefined) draft.lanServer = { ...patch.lanServer }
     if (patch.servers !== undefined) {
       draft.servers = patch.servers.map((server) => ({
         ...server,

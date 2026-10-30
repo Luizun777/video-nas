@@ -1,6 +1,6 @@
 import { promises as nodeFs } from 'node:fs'
 import { basename, dirname, join, normalize } from 'node:path'
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, shell } from 'electron'
 import { EVENTS, IPC } from '@shared/ipc-channels'
 import type {
   AppConfig,
@@ -70,11 +70,14 @@ import {
 } from '@core/scanner/scan-orchestrator'
 import { getExtraDetails as fetchExtraDetails, getTvSeasons, searchAsResults, testToken } from '@core/tmdb/client'
 import { desktopImageCache } from './tmdb/image-cache'
+import { callerId, emitBroadcast, handle } from './web/rpc-registry'
+import { getLanServerInfo, startLanServerFromConfig } from './web/lan-server'
 
 function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send(channel, payload)
   }
+  emitBroadcast(channel, payload)
 }
 
 function emitLibrary(): void {
@@ -90,22 +93,23 @@ export function registerIpc(): void {
   })
 
   // ---- Configuración -------------------------------------------------------
-  ipcMain.handle(IPC.getConfig, (): AppConfig => getConfig())
+  handle(IPC.getConfig, (): AppConfig => getConfig())
 
-  ipcMain.handle(IPC.saveConfig, async (_e, patch: Partial<AppConfig>): Promise<AppConfig> => {
+  handle(IPC.saveConfig, async (_e, patch: Partial<AppConfig>): Promise<AppConfig> => {
     const config = saveConfig(patch)
+    if (patch.lanServer) startLanServerFromConfig()
     void refreshStatuses(false).then((statuses) => broadcast(EVENTS.serverStatuses, statuses))
     return config
   })
 
-  ipcMain.handle(IPC.testTmdbToken, (_e, token: string) => testToken(token))
+  handle(IPC.testTmdbToken, (_e, token: string) => testToken(token))
 
   // ---- Biblioteca ----------------------------------------------------------
-  ipcMain.handle(IPC.getLibrary, (): Library => getLibrary())
-  ipcMain.handle(IPC.getServerStatuses, (): ServerStatus[] => getStatuses())
-  ipcMain.handle(IPC.refreshServerStatuses, (): Promise<ServerStatus[]> => refreshStatuses(true))
+  handle(IPC.getLibrary, (): Library => getLibrary())
+  handle(IPC.getServerStatuses, (): ServerStatus[] => getStatuses())
+  handle(IPC.refreshServerStatuses, (): Promise<ServerStatus[]> => refreshStatuses(true))
 
-  ipcMain.handle(IPC.purgeMissing, async (): Promise<number> => {
+  handle(IPC.purgeMissing, async (): Promise<number> => {
     const missing = Object.values(getLibrary().items)
       .filter((item) => item.missing)
       .map((item) => item.id)
@@ -116,16 +120,16 @@ export function registerIpc(): void {
   })
 
   // ---- Escaneo -------------------------------------------------------------
-  ipcMain.handle(IPC.startScan, async (_e, opts?: { full?: boolean }): Promise<void> => {
+  handle(IPC.startScan, async (_e, opts?: { full?: boolean }): Promise<void> => {
     void startScan(opts ?? {}).then(() => {
       emitLibrary()
     })
   })
-  ipcMain.handle(IPC.cancelScan, (): void => cancelScan())
-  ipcMain.handle(IPC.getScanProgress, (): ScanProgress => getProgress())
+  handle(IPC.cancelScan, (): void => cancelScan())
+  handle(IPC.getScanProgress, (): ScanProgress => getProgress())
 
   // ---- TMDB ----------------------------------------------------------------
-  ipcMain.handle(
+  handle(
     IPC.tmdbSearch,
     async (_e, query: string, year: number | undefined, kind: MediaKind): Promise<TmdbSearchResult[]> => {
       const config = getConfig()
@@ -139,18 +143,18 @@ export function registerIpc(): void {
   )
 
   // La lógica vive en core (override-service): la MISMA para Electron y Android.
-  ipcMain.handle(
+  handle(
     IPC.applyOverride,
     (_e, itemId: string, override: MetadataOverride): Promise<LibraryItem | null> =>
       applyOverrideToItem(itemId, override)
   )
 
-  ipcMain.handle(
+  handle(
     IPC.clearOverride,
     (_e, itemId: string): Promise<LibraryItem | null> => clearOverrideToAuto(itemId)
   )
 
-  ipcMain.handle(IPC.getTvDetails, async (_e, itemId: string): Promise<LibraryItem | null> => {
+  handle(IPC.getTvDetails, async (_e, itemId: string): Promise<LibraryItem | null> => {
     const item = getItem(itemId)
     if (!item) return null
     if (item.kind !== 'tv' || !item.tmdb) return item
@@ -169,7 +173,7 @@ export function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(IPC.getExtraDetails, async (_e, itemId: string): Promise<LibraryItem | null> => {
+  handle(IPC.getExtraDetails, async (_e, itemId: string): Promise<LibraryItem | null> => {
     const item = getItem(itemId)
     if (!item) return null
     if (!item.tmdb) return item
@@ -194,7 +198,7 @@ export function registerIpc(): void {
   })
 
   // ---- Reproducción --------------------------------------------------------
-  ipcMain.handle(IPC.play, async (_e, itemId: string, relPath?: string): Promise<PlayResult> => {
+  handle(IPC.play, async (_e, itemId: string, relPath?: string): Promise<PlayResult> => {
     const resolved = await resolveAbsolutePath(itemId, relPath)
     if ('error' in resolved) return { ok: false, error: resolved.error }
 
@@ -213,7 +217,7 @@ export function registerIpc(): void {
     return error ? { ok: false, error } : { ok: true }
   })
 
-  ipcMain.handle(
+  handle(
     IPC.getChapterMarks,
     async (_e, itemId: string, relPath?: string): Promise<ChapterMarks> => {
       const resolved = await resolveAbsolutePath(itemId, relPath)
@@ -222,7 +226,7 @@ export function registerIpc(): void {
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.setIntroMark,
     async (_e, itemId: string, seconds: number): Promise<LibraryItem | null> => {
       const item = getItem(itemId)
@@ -238,9 +242,9 @@ export function registerIpc(): void {
     }
   )
 
-  ipcMain.handle(IPC.listExternalPlayers, (): ExternalPlayerInfo[] => listExternalPlayers())
+  handle(IPC.listExternalPlayers, (): ExternalPlayerInfo[] => listExternalPlayers())
 
-  ipcMain.handle(IPC.chooseExternalPlayer, async (): Promise<string | null> => {
+  handle(IPC.chooseExternalPlayer, async (): Promise<string | null> => {
     const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const onWindows = process.platform === 'win32'
     const result = await dialog.showOpenDialog(window, {
@@ -254,7 +258,7 @@ export function registerIpc(): void {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
-  ipcMain.handle(IPC.revealInFinder, async (_e, itemId: string, relPath?: string): Promise<PlayResult> => {
+  handle(IPC.revealInFinder, async (_e, itemId: string, relPath?: string): Promise<PlayResult> => {
     const resolved = await resolveAbsolutePath(itemId, relPath)
     if ('error' in resolved) return { ok: false, error: resolved.error }
     shell.showItemInFolder(resolved.absPath)
@@ -264,34 +268,34 @@ export function registerIpc(): void {
   // ---- Cola de reproducción -----------------------------------------------
   const broadcastQueue = (): void => broadcast(EVENTS.queue, getQueue())
 
-  ipcMain.handle(IPC.getQueue, (): QueueEntry[] => getQueue())
-  ipcMain.handle(IPC.addToQueue, (_e, itemId: string): QueueEntry[] => {
+  handle(IPC.getQueue, (): QueueEntry[] => getQueue())
+  handle(IPC.addToQueue, (_e, itemId: string): QueueEntry[] => {
     const entries = addToQueue(itemId)
     broadcastQueue()
     return entries
   })
-  ipcMain.handle(IPC.removeFromQueue, (_e, itemId: string): QueueEntry[] => {
+  handle(IPC.removeFromQueue, (_e, itemId: string): QueueEntry[] => {
     const entries = removeFromQueue(itemId)
     broadcastQueue()
     return entries
   })
-  ipcMain.handle(IPC.clearQueue, (): QueueEntry[] => {
+  handle(IPC.clearQueue, (): QueueEntry[] => {
     const entries = clearQueue()
     broadcastQueue()
     return entries
   })
-  ipcMain.handle(IPC.shiftQueue, (_e, skipItemId?: string): QueueEntry | null => {
+  handle(IPC.shiftQueue, (_e, skipItemId?: string): QueueEntry | null => {
     const entry = shiftQueue(skipItemId)
     broadcastQueue()
     return entry
   })
 
   // ---- Ventana separada del reproductor ------------------------------------
-  ipcMain.handle(IPC.openPlayerWindow, (_e, target: PlayTarget): void => {
+  handle(IPC.openPlayerWindow, (_e, target: PlayTarget): void => {
     openPlayerWindow(target)
   })
 
-  ipcMain.handle(IPC.reattachPlayer, (_e, target: PlayTarget): void => {
+  handle(IPC.reattachPlayer, (_e, target: PlayTarget): void => {
     const catalog = findCatalogWindow()
     if (catalog) {
       // Envío dirigido (no broadcast): la ventana del reproductor, que se está cerrando,
@@ -307,33 +311,33 @@ export function registerIpc(): void {
     closePlayerWindow()
   })
 
-  ipcMain.handle(IPC.consumePendingAttach, (): PlayTarget | null => consumePendingAttach())
+  handle(IPC.consumePendingAttach, (): PlayTarget | null => consumePendingAttach())
 
   // ---- Red -----------------------------------------------------------------
-  ipcMain.handle(IPC.discoverSmbServers, () => discoverSmbServers())
+  handle(IPC.discoverSmbServers, () => discoverSmbServers())
 
   // ---- Descargas (modo offline) --------------------------------------------
-  ipcMain.handle(IPC.startDownload, (_e, itemId: string, relPath?: string): Promise<PlayResult> =>
+  handle(IPC.startDownload, (_e, itemId: string, relPath?: string): Promise<PlayResult> =>
     startDownload(itemId, relPath)
   )
-  ipcMain.handle(IPC.cancelDownload, (_e, itemId: string, relPath: string): Promise<void> =>
+  handle(IPC.cancelDownload, (_e, itemId: string, relPath: string): Promise<void> =>
     cancelDownload(itemId, relPath)
   )
-  ipcMain.handle(IPC.deleteDownload, (_e, itemId: string, relPath: string): Promise<void> =>
+  handle(IPC.deleteDownload, (_e, itemId: string, relPath: string): Promise<void> =>
     deleteDownload(itemId, relPath)
   )
-  ipcMain.handle(IPC.getDownloads, (): DownloadEntry[] => getDownloads())
+  handle(IPC.getDownloads, (): DownloadEntry[] => getDownloads())
 
   // ---- Progreso de reproducción ("continuar viendo") -----------------------
-  ipcMain.handle(IPC.getPlaybackProgress, (): PlaybackProgressEntry[] => getAllProgress())
-  ipcMain.handle(
+  handle(IPC.getPlaybackProgress, (): PlaybackProgressEntry[] => getAllProgress())
+  handle(
     IPC.setPlaybackProgress,
     (_e, entry: Omit<PlaybackProgressEntry, 'updatedAt' | 'finished'>): void => setProgress(entry)
   )
-  ipcMain.handle(IPC.clearPlaybackProgress, (_e, key: string): void => clearProgress(key))
+  handle(IPC.clearPlaybackProgress, (_e, key: string): void => clearProgress(key))
 
   // ---- Pistas, subtítulos y transcode (solo desktop) -----------------------
-  ipcMain.handle(IPC.probeMedia, async (_e, itemId: string, relPath?: string) => {
+  handle(IPC.probeMedia, async (_e, itemId: string, relPath?: string) => {
     const resolved = await resolveAbsolutePath(itemId, relPath)
     if ('error' in resolved) return null
     try {
@@ -345,7 +349,7 @@ export function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(IPC.listSubtitleFiles, async (_e, itemId: string, relPath?: string) => {
+  handle(IPC.listSubtitleFiles, async (_e, itemId: string, relPath?: string) => {
     const item = getItem(itemId)
     if (!item) return []
     const resolved = await resolveAbsolutePath(itemId, relPath)
@@ -376,7 +380,7 @@ export function registerIpc(): void {
   // El VTT viaja como texto por IPC y el renderer lo monta con blob:. Servirlo por
   // videofile:// obligaría a marcar el <video> con crossOrigin, y eso rompe TODA la
   // reproducción (el esquema no tiene corsEnabled).
-  ipcMain.handle(
+  handle(
     IPC.getSubtitleVtt,
     async (
       _e,
@@ -395,7 +399,7 @@ export function registerIpc(): void {
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.getPreviewFrame,
     async (_e, itemId: string, relPath: string | undefined, seconds: number): Promise<string | null> => {
       const resolved = await resolveAbsolutePath(itemId, relPath)
@@ -404,10 +408,10 @@ export function registerIpc(): void {
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.startTranscode,
     async (
-      _e,
+      event,
       options: {
         itemId: string
         relPath?: string
@@ -422,14 +426,18 @@ export function registerIpc(): void {
         absPath: resolved.absPath,
         startAt: options.startAt,
         audioStreamIndex: options.audioStreamIndex,
-        videoCopy: options.videoCopy
+        videoCopy: options.videoCopy,
+        owner: callerId(event)
       })
     }
   )
 
-  ipcMain.handle(IPC.stopTranscode, (_e, sessionId: string): void => {
+  handle(IPC.stopTranscode, (_e, sessionId: string): void => {
     stopTranscodeSession(sessionId)
   })
+
+  // ---- Servidor LAN (versión web) -----------------------------------------
+  handle(IPC.getLanServerInfo, () => getLanServerInfo())
 
   // ---- Eventos hacia el renderer ------------------------------------------
   onProgress((progress) => broadcast(EVENTS.scanProgress, progress))

@@ -9,7 +9,8 @@ import { ffmpegBinary } from './ffmpeg'
  * stdout, servido como stream NO buscable por videofile://transcode. El seek lo finge
  * el motor del renderer: mata la sesión y arranca otra en la nueva posición.
  *
- * Una sola sesión viva por proceso: abrir la siguiente mata la anterior. La
+ * Una sola sesión viva por dueño (la app de escritorio, o cada navegador de la LAN):
+ * abrir la siguiente mata la anterior de ese mismo dueño. La
  * contrapresión llega sola (pipe → ReadableStream pull); la cancelación NO — el
  * protocolo envuelve el stream y su cancel() llama a stopTranscodeSession().
  */
@@ -21,15 +22,18 @@ export interface TranscodeOptions {
   audioStreamIndex?: number
   /** true = solo el audio es el problema: el video se copia sin recodificar. */
   videoCopy: boolean
+  /** Quién la pide: 'desktop' o 'lan:<ip>'. Default: 'desktop'. */
+  owner?: string
 }
 
 interface Session {
   id: string
+  owner: string
   proc: ChildProcessByStdio<null, Readable, null>
   taken: boolean
 }
 
-let current: Session | null = null
+const sessions = new Map<string, Session>()
 
 /** H.264 por hardware (VideoToolbox) solo existe en macOS; en Windows, x264 por software. */
 const VIDEO_ENCODE_ARGS =
@@ -38,7 +42,10 @@ const VIDEO_ENCODE_ARGS =
     : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p']
 
 export function startTranscodeSession(options: TranscodeOptions): { sessionId: string } {
-  stopTranscodeSession()
+  const owner = options.owner ?? 'desktop'
+  for (const session of [...sessions.values()]) {
+    if (session.owner === owner) stopTranscodeSession(session.id)
+  }
 
   const args = ['-v', 'error', '-nostdin']
   if (options.startAt > 0) args.push('-ss', String(options.startAt))
@@ -54,20 +61,25 @@ export function startTranscodeSession(options: TranscodeOptions): { sessionId: s
 
   const proc = spawn(ffmpegBinary(), args, { stdio: ['ignore', 'pipe', 'ignore'] })
   const id = randomUUID()
-  current = { id, proc, taken: false }
+  sessions.set(id, { id, owner, proc, taken: false })
+  proc.on('exit', () => sessions.delete(id))
   return { sessionId: id }
 }
 
 /** El stdout se entrega UNA sola vez (un único consumidor: la respuesta del protocolo). */
 export function takeSessionStream(sessionId: string): Readable | null {
-  if (!current || current.id !== sessionId || current.taken) return null
-  current.taken = true
-  return current.proc.stdout
+  const session = sessions.get(sessionId)
+  if (!session || session.taken) return null
+  session.taken = true
+  return session.proc.stdout
 }
 
+/** Sin sessionId mata todas (al salir de la app). */
 export function stopTranscodeSession(sessionId?: string): void {
-  if (!current) return
-  if (sessionId && current.id !== sessionId) return
-  current.proc.kill('SIGKILL')
-  current = null
+  const targets = sessionId ? [sessions.get(sessionId)] : [...sessions.values()]
+  for (const session of targets) {
+    if (!session) continue
+    session.proc.kill('SIGKILL')
+    sessions.delete(session.id)
+  }
 }

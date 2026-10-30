@@ -3,12 +3,16 @@ import type {
   DiscoveredServer,
   DownloadEntry,
   ExternalPlayerInfo,
+  LanServerInfo,
   MediaKind,
   PlaybackMode,
   ServerConfig,
   ServerStatus
 } from '@shared/types'
 import { displayTitle, useAppStore } from '@/store/app-store'
+
+/** Igual que DEFAULT_LAN_PORT de src/main/web/lan-server.ts. */
+const DEFAULT_LAN_PORT = 8787
 
 const STATE_LABEL: Record<ServerStatus['state'], string> = {
   online: 'Conectado',
@@ -184,6 +188,87 @@ function ServerEditor({
   )
 }
 
+/** Solo desktop: comparte el catálogo con los navegadores de la LAN (src/main/web/lan-server.ts). */
+function LanServerSection(): React.JSX.Element {
+  const config = useAppStore((s) => s.config)
+  const reloadConfig = useAppStore((s) => s.reloadConfig)
+  const pushToast = useAppStore((s) => s.pushToast)
+  const current = config?.lanServer ?? { enabled: false, port: DEFAULT_LAN_PORT }
+  const [port, setPort] = useState(String(current.port))
+  const [info, setInfo] = useState<LanServerInfo | null>(null)
+
+  const refreshInfo = async (): Promise<void> => {
+    if (window.api.getLanServerInfo) setInfo(await window.api.getLanServerInfo())
+  }
+
+  useEffect(() => {
+    setPort(String(current.port))
+    // El listen es asíncrono: el estado real (o el error de puerto ocupado) llega un instante después.
+    const timer = setTimeout(() => void refreshInfo(), 400)
+    return () => clearTimeout(timer)
+  }, [current.enabled, current.port])
+
+  const apply = async (enabled: boolean): Promise<void> => {
+    const parsed = Number.parseInt(port, 10)
+    if (!Number.isInteger(parsed) || parsed < 1024 || parsed > 65535) {
+      pushToast('El puerto debe ser un número entre 1024 y 65535.', 'error')
+      return
+    }
+    await window.api.saveConfig({ lanServer: { enabled, port: parsed } })
+    await reloadConfig()
+  }
+
+  return (
+    <section className="settings-section">
+      <h2>Versión web en tu red (LAN)</h2>
+      <p className="settings-hint">
+        Abre el catálogo desde el navegador de cualquier teléfono, tablet, tele o computadora de tu
+        casa, sin instalar nada. Mientras esta app esté abierta, ella lee el NAS y le manda el
+        video al navegador (y lo convierte al vuelo si el navegador no soporta el formato). No
+        pide contraseña: cualquiera conectado a tu red podrá ver el catálogo.
+      </p>
+      <label className="radio-row">
+        <input
+          type="checkbox"
+          checked={current.enabled}
+          onChange={(e) => void apply(e.target.checked)}
+        />
+        Compartir el catálogo en la red
+      </label>
+      <div className="field-row">
+        <input
+          style={{ maxWidth: 110 }}
+          inputMode="numeric"
+          value={port}
+          aria-label="Puerto"
+          onChange={(e) => setPort(e.target.value)}
+        />
+        <button
+          className="btn btn-ghost"
+          onClick={() => void apply(current.enabled)}
+          disabled={port === String(current.port)}
+        >
+          Cambiar puerto
+        </button>
+      </div>
+      {info?.error && <p className="settings-hint">{info.error}</p>}
+      {info?.running && (
+        <p className="settings-hint">
+          Ábrelo en el navegador:{' '}
+          {info.urls.length === 0
+            ? 'esta computadora no tiene una dirección de red ahora mismo.'
+            : info.urls.map((url, index) => (
+                <span key={url}>
+                  {index > 0 && ' · '}
+                  <code>{url}</code>
+                </span>
+              ))}
+        </p>
+      )}
+    </section>
+  )
+}
+
 export function SettingsView(): React.JSX.Element {
   const config = useAppStore((s) => s.config)
   const statuses = useAppStore((s) => s.statuses)
@@ -194,6 +279,7 @@ export function SettingsView(): React.JSX.Element {
   const reloadConfig = useAppStore((s) => s.reloadConfig)
   const reloadLibrary = useAppStore((s) => s.reloadLibrary)
   const pushToast = useAppStore((s) => s.pushToast)
+  const { manageConfig, lanServer } = window.api.capabilities
 
   const [token, setToken] = useState('')
   const [servers, setServers] = useState<ServerConfig[]>([])
@@ -272,9 +358,14 @@ export function SettingsView(): React.JSX.Element {
   return (
     <div className="page">
       <h1 className="page-title">Ajustes</h1>
-      <p className="page-subtitle">Servidores, metadata y acceso remoto.</p>
+      <p className="page-subtitle">
+        {manageConfig
+          ? 'Servidores, metadata y acceso remoto.'
+          : 'Estás viendo el catálogo de la app de escritorio por la red: el token, los servidores y el reproductor se ajustan allí.'}
+      </p>
 
       {/* ------------------------------------------------------------ TMDB */}
+      {manageConfig && (
       <section className="settings-section">
         <h2>TheMovieDB</h2>
         <p className="settings-hint">
@@ -297,8 +388,10 @@ export function SettingsView(): React.JSX.Element {
           </button>
         </div>
       </section>
+      )}
 
       {/* --------------------------------------------------------- servidores */}
+      {manageConfig && (
       <section className="settings-section">
         <h2>Servidores NAS</h2>
         <p className="settings-hint">
@@ -368,6 +461,7 @@ export function SettingsView(): React.JSX.Element {
           </div>
         )}
       </section>
+      )}
 
       {/* ---------------------------------------------------------- escaneo */}
       <section className="settings-section">
@@ -414,6 +508,7 @@ export function SettingsView(): React.JSX.Element {
       </section>
 
       {/* ---------------------------------------------------------- reproductor */}
+      {manageConfig && (
       <section className="settings-section">
         <h2>Reproductor</h2>
         <p className="settings-hint">
@@ -534,8 +629,10 @@ export function SettingsView(): React.JSX.Element {
           </button>
         </div>
       </section>
+      )}
 
       {/* ----------------------------------------------------------- descargas */}
+      {manageConfig && (
       <section className="settings-section">
         <h2>Descargas (modo offline)</h2>
         <p className="settings-hint">
@@ -604,8 +701,12 @@ export function SettingsView(): React.JSX.Element {
           </>
         )}
       </section>
+      )}
+
+      {lanServer && <LanServerSection />}
 
       {/* ---------------------------------------------------- acceso remoto */}
+      {manageConfig && (
       <section className="settings-section">
         <h2>Acceso remoto (fuera de tu red)</h2>
         <div className="remote-help">
@@ -640,6 +741,7 @@ export function SettingsView(): React.JSX.Element {
           </p>
         </div>
       </section>
+      )}
     </div>
   )
 }

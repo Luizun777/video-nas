@@ -21,7 +21,8 @@ import type {
   ScanProgress,
   ServerStatus,
   TmdbSearchResult,
-  DiscoveredServer
+  DiscoveredServer,
+  LanServerInfo
 } from '@shared/types'
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -41,7 +42,11 @@ const DESKTOP_CAPABILITIES: AppCapabilities = {
   revealInFiles: true,
   chooseExternalPlayerFile: true,
   smbCredentials: false,
-  mdnsDiscovery: true
+  mdnsDiscovery: true,
+  externalPlayer: true,
+  offlineDownloads: true,
+  manageConfig: true,
+  lanServer: true
 }
 
 const api: IpcApi = {
@@ -143,7 +148,9 @@ const api: IpcApi = {
   onServerStatuses: (cb) => subscribe<ServerStatus[]>(EVENTS.serverStatuses, cb),
   onDownloads: (cb) => subscribe<DownloadEntry[]>(EVENTS.downloads, cb),
   onQueue: (cb) => subscribe<QueueEntry[]>(EVENTS.queue, cb),
-  onPlayerAttach: (cb) => subscribe<PlayTarget>(EVENTS.playerAttach, cb)
+  onPlayerAttach: (cb) => subscribe<PlayTarget>(EVENTS.playerAttach, cb),
+
+  getLanServerInfo: () => ipcRenderer.invoke(IPC.getLanServerInfo) as Promise<LanServerInfo>
 }
 
 contextBridge.exposeInMainWorld('api', api)

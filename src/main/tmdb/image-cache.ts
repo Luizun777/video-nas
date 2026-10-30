@@ -1,5 +1,6 @@
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { createReadStream, promises as fs } from 'node:fs'
+import { join, normalize } from 'node:path'
+import { Readable } from 'node:stream'
 import { app } from 'electron'
 import type { MediaKind } from '@shared/types'
 import type { ImageCacheAdapter } from '@core/io'
@@ -16,6 +17,39 @@ export async function ensureCacheDirs(): Promise<void> {
 
 export function absoluteCachePath(relative: string): string {
   return join(cacheRoot(), relative)
+}
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml'
+}
+
+/** Sirve un archivo del caché (relativo a cacheRoot): mediacache:// y el servidor LAN. */
+export async function serveCacheFile(relative: string): Promise<Response> {
+  const root = cacheRoot()
+  const absolute = normalize(join(root, relative))
+
+  if (!absolute.startsWith(root)) {
+    return new Response('Ruta no permitida', { status: 403 })
+  }
+
+  try {
+    await fs.access(absolute)
+  } catch {
+    return new Response('No encontrado', { status: 404 })
+  }
+
+  const extension = absolute.slice(absolute.lastIndexOf('.')).toLowerCase()
+  const stream = createReadStream(absolute)
+  return new Response(Readable.toWeb(stream) as ReadableStream, {
+    headers: {
+      'Content-Type': MIME_BY_EXTENSION[extension] ?? 'application/octet-stream',
+      'Cache-Control': 'public, max-age=31536000'
+    }
+  })
 }
 
 /**

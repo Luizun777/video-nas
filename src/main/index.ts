@@ -1,7 +1,4 @@
-import { createReadStream } from 'node:fs'
-import { promises as fs } from 'node:fs'
-import { join, normalize } from 'node:path'
-import { Readable } from 'node:stream'
+import { join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeTheme, protocol } from 'electron'
 import { registerIpc } from './ipc'
 import { createMainWindow } from './main-window'
@@ -19,7 +16,8 @@ import { stopTranscodeSession } from './playback/transcode-session'
 import { initScanner, refreshStatuses, startScan } from '@core/scanner/scan-orchestrator'
 import { initSharedOverridesSync } from '@core/metadata/shared-overrides-sync'
 import { desktopScanEnv } from './adapters/desktop-scan-env'
-import { cacheRoot, ensureCacheDirs } from './tmdb/image-cache'
+import { ensureCacheDirs, serveCacheFile } from './tmdb/image-cache'
+import { startLanServerFromConfig, stopLanServer } from './web/lan-server'
 
 // Expone video.audioTracks (cambio de pista de audio en vivo): Chromium lo tiene
 // implementado pero detrás de esta blink feature.
@@ -44,40 +42,11 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'videofile', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ])
 
-const MIME_BY_EXTENSION: Record<string, string> = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml'
-}
-
 function registerMediaCacheProtocol(): void {
-  protocol.handle('mediacache', async (request) => {
+  // mediacache://posters/m-603-w342.jpg  ->  host="posters", pathname="/m-603-w342.jpg"
+  protocol.handle('mediacache', (request) => {
     const url = new URL(request.url)
-    // mediacache://posters/m-603-w342.jpg  ->  host="posters", pathname="/m-603-w342.jpg"
-    const relative = decodeURIComponent(`${url.hostname}${url.pathname}`)
-    const root = cacheRoot()
-    const absolute = normalize(join(root, relative))
-
-    if (!absolute.startsWith(root)) {
-      return new Response('Ruta no permitida', { status: 403 })
-    }
-
-    try {
-      await fs.access(absolute)
-    } catch {
-      return new Response('No encontrado', { status: 404 })
-    }
-
-    const extension = absolute.slice(absolute.lastIndexOf('.')).toLowerCase()
-    const stream = createReadStream(absolute)
-    return new Response(Readable.toWeb(stream) as ReadableStream, {
-      headers: {
-        'Content-Type': MIME_BY_EXTENSION[extension] ?? 'application/octet-stream',
-        'Cache-Control': 'public, max-age=31536000'
-      }
-    })
+    return serveCacheFile(decodeURIComponent(`${url.hostname}${url.pathname}`))
   })
 }
 
@@ -111,6 +80,7 @@ void app.whenReady().then(async () => {
     nativeTheme.themeSource = 'dark'
   }
   createMainWindow()
+  startLanServerFromConfig()
 
   // Al arrancar: comprobar servidores y lanzar un escaneo incremental.
   void refreshStatuses(false).then(() => {
@@ -134,4 +104,5 @@ app.on('before-quit', () => {
   if (!isPrimaryInstance) return
   void flushProgress()
   stopTranscodeSession()
+  stopLanServer()
 })

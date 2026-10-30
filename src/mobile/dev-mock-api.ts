@@ -215,7 +215,11 @@ export function installMockApi(): void {
       revealInFiles: false,
       chooseExternalPlayerFile: false,
       smbCredentials: true,
-      mdnsDiscovery: false
+      mdnsDiscovery: false,
+      externalPlayer: true,
+      offlineDownloads: true,
+      manageConfig: true,
+      lanServer: false
     },
 
     getConfig: async () => deepClone(config),
